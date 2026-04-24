@@ -31,9 +31,9 @@ default-tag = "0.0.1"
 method = "minor"
 
 [tool.versioningit.format]
-distance = "{{base_version}}+{{distance}}.{{vcs}}{{rev}}"
-dirty = "{{base_version}}+{{distance}}.{{vcs}}{{rev}}.dirty"
-distance-dirty = "{{base_version}}+{{distance}}.{{vcs}}{{rev}}.dirty"
+distance = "{base_version}+{distance}.{vcs}{rev}"
+dirty = "{base_version}+{distance}.{vcs}{rev}.dirty"
+distance-dirty = "{base_version}+{distance}.{vcs}{rev}.dirty"
 
 [tool.versioningit.write]
 file = "q2_humann/_version.py"

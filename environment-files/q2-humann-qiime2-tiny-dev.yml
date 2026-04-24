@@ -1,9 +1,11 @@
+name: q2-humann-tiny-dev
 channels:
-- https://packages.qiime2.org/qiime2/latest/tiny/passed
+- https://packages.qiime2.org/qiime2/2026.4/tiny/released
 - conda-forge
 - bioconda
 dependencies:
-  - qiime2-tiny
+  - rachis-tiny
+  - humann
   # Note 1: Add any additional conda dependencies here.
   - pip
   - pip:
