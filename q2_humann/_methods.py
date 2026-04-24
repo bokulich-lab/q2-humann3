@@ -8,12 +8,24 @@
 
 import json
 from pathlib import Path
+import gzip
 import shutil
 import pandas as pd
 import subprocess
 import tempfile
 
-from q2_humann._types_and_formats import HumannDatabaseDirFmt
+from q2_types.per_sample_sequences import (
+    SingleLanePerSamplePairedEndFastqDirFmt,
+    SingleLanePerSampleSingleEndFastqDirFmt,
+)
+
+from q2_humann._types_and_formats import (
+    HumannDatabaseDirFmt,
+    HumannGeneFamilyDirectoryFormat,
+    HumannPathAbundanceDirectoryFormat,
+    HumannReactionDirectoryFormat,
+    MetaphlanMergedAbundanceDirectoryFormat,
+)
 
 EXTERNAL_CMD_WARNING = (
     "Running external command line application. This may print additional "
@@ -66,6 +78,94 @@ def _run_humann_command(cmd: list[str]) -> None:
         raise RuntimeError(
             f"Command failed with exit code {exc.returncode}: {detail}"
         ) from exc
+
+
+def _read_manifest(reads) -> pd.DataFrame:
+    manifest = pd.read_csv(reads.path / "MANIFEST")
+    manifest["absolute_path"] = manifest["filename"].apply(
+        lambda value: str(reads.path / value)
+    )
+    return manifest
+
+
+def _stage_sample_input(
+    sample_manifest: pd.DataFrame, sample_id: str, work_dir: Path
+) -> Path:
+    staged_input = work_dir / f"{sample_id}.fastq.gz"
+    forward_reads = sample_manifest.loc[
+        sample_manifest["direction"] == "forward", "absolute_path"
+    ].tolist()
+    reverse_reads = sample_manifest.loc[
+        sample_manifest["direction"] == "reverse", "absolute_path"
+    ].tolist()
+
+    input_paths = forward_reads + reverse_reads
+    if not input_paths:
+        raise RuntimeError(f"No reads found for sample {sample_id!r}.")
+
+    if len(input_paths) == 1:
+        shutil.copy2(input_paths[0], staged_input)
+        return staged_input
+
+    with open(staged_input, "wb") as out_fh:
+        for input_path in input_paths:
+            with open(input_path, "rb") as in_fh:
+                shutil.copyfileobj(in_fh, out_fh)
+
+    return staged_input
+
+
+def _copy_to_single_file_dirfmt(source: Path, destination) -> None:
+    shutil.copy2(source, destination.path / "table.tsv")
+
+
+def _join_humann_tables(
+    run_output_dir: Path, file_name: str, output_path: Path
+) -> None:
+    cmd = [
+        "humann_join_tables",
+        "--input",
+        str(run_output_dir),
+        "--output",
+        str(output_path),
+        "--file_name",
+        file_name,
+    ]
+    _run_humann_command(cmd)
+
+
+def _read_database_build(database: HumannDatabaseDirFmt) -> str:
+    with (database.path / "metadata.json").open() as fh:
+        metadata = json.load(fh)
+    return metadata["build"]
+
+
+def _regroup_gene_families_to_reactions(
+    gene_families_path: Path,
+    translated_search_database: HumannDatabaseDirFmt,
+    output_path: Path,
+) -> None:
+    build = _read_database_build(translated_search_database)
+    if build.startswith("uniref50"):
+        groups = "uniref50_rxn"
+    elif build.startswith("uniref90"):
+        groups = "uniref90_rxn"
+    else:
+        raise RuntimeError(
+            f"Unsupported translated-search database build {build!r} for "
+            "reaction regrouping."
+        )
+
+    cmd = [
+        "humann_regroup_table",
+        "--input",
+        str(gene_families_path),
+        "--groups",
+        groups,
+        "--output",
+        str(output_path),
+    ]
+    _run_humann_command(cmd)
 
 
 def _copy_directory_contents(source_dir: Path, target_dir: Path) -> None:
@@ -142,3 +242,82 @@ def download_translated_search_database(
         build=build,
         database_kind="translated-search",
     )
+
+
+def run_humann(
+    reads: (
+        SingleLanePerSampleSingleEndFastqDirFmt
+        | SingleLanePerSamplePairedEndFastqDirFmt
+    ),
+    nucleotide_database: HumannDatabaseDirFmt,
+    translated_search_database: HumannDatabaseDirFmt,
+    threads: int = 1,
+) -> tuple[
+    HumannGeneFamilyDirectoryFormat,
+    HumannPathAbundanceDirectoryFormat,
+    MetaphlanMergedAbundanceDirectoryFormat,
+    HumannReactionDirectoryFormat,
+]:
+    manifest = _read_manifest(reads)
+
+    with tempfile.TemporaryDirectory(prefix="q2-humann-run-") as tmpdir:
+        tmpdir = Path(tmpdir)
+        run_output_dir = tmpdir / "humann-output"
+        run_output_dir.mkdir()
+
+        for sample_id, sample_manifest in manifest.groupby("sample-id"):
+            sample_work_dir = tmpdir / sample_id
+            sample_work_dir.mkdir()
+            staged_input = _stage_sample_input(
+                sample_manifest, sample_id, sample_work_dir
+            )
+
+            cmd = [
+                "humann",
+                "--input",
+                str(staged_input),
+                "--output",
+                str(run_output_dir),
+                "--output-basename",
+                sample_id,
+                "--threads",
+                str(threads),
+                "--nucleotide-database",
+                str(nucleotide_database.path / "data"),
+                "--protein-database",
+                str(translated_search_database.path / "data"),
+                "--output-format",
+                "tsv",
+            ]
+            _run_humann_command(cmd)
+
+        joined_gene_families = tmpdir / "joined_genefamilies.tsv"
+        joined_path_abundance = tmpdir / "joined_pathabundance.tsv"
+        joined_metaphlan_profile = tmpdir / "joined_metaphlan_profile.tsv"
+        joined_reactions = tmpdir / "joined_reactions.tsv"
+        _join_humann_tables(
+            run_output_dir, "genefamilies", joined_gene_families
+        )
+        _join_humann_tables(
+            run_output_dir, "pathabundance", joined_path_abundance
+        )
+        _join_humann_tables(
+            run_output_dir, "metaphlan_profile", joined_metaphlan_profile
+        )
+        _regroup_gene_families_to_reactions(
+            joined_gene_families,
+            translated_search_database,
+            joined_reactions,
+        )
+
+        gene_families = HumannGeneFamilyDirectoryFormat()
+        path_abundance = HumannPathAbundanceDirectoryFormat()
+        metaphlan_profile = MetaphlanMergedAbundanceDirectoryFormat()
+        reactions = HumannReactionDirectoryFormat()
+        _copy_to_single_file_dirfmt(joined_gene_families, gene_families)
+        _copy_to_single_file_dirfmt(joined_path_abundance, path_abundance)
+        _copy_to_single_file_dirfmt(
+            joined_metaphlan_profile, metaphlan_profile
+        )
+        _copy_to_single_file_dirfmt(joined_reactions, reactions)
+        return gene_families, path_abundance, metaphlan_profile, reactions
