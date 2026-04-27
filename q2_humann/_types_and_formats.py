@@ -23,6 +23,7 @@ HumannPathAbundanceTable = SemanticType("HumannPathAbundanceTable")
 HumannGeneFamilyTable = SemanticType("HumannGeneFamilyTable")
 HumannReactionTable = SemanticType("HumannReactionTable")
 MetaphlanMergedAbundanceTable = SemanticType("MetaphlanMergedAbundanceTable")
+MetaphlanDatabase = SemanticType("MetaphlanDatabase")
 
 
 class HumannDatabaseMetadataFormat(model.TextFileFormat):
@@ -61,6 +62,48 @@ class HumannDatabaseDirFmt(model.DirectoryFormat):
     )
     payload = model.FileCollection(
         r"data/.+", format=HumannDatabaseFileFormat
+    )
+
+    @payload.set_path_maker
+    def payload_path_maker(self, relative_path: str):
+        return str(Path("data") / relative_path)
+
+
+class MetaphlanDatabaseMetadataFormat(model.TextFileFormat):
+
+    def _validate_(self, level):
+        with self.open() as fh:
+            metadata = json.load(fh)
+
+        missing = {"database_kind", "index"} - set(metadata)
+        if missing:
+            missing_fields = ", ".join(sorted(missing))
+            raise ValidationError(
+                f"Missing required MetaPhlAn database metadata fields: "
+                f"{missing_fields}."
+            )
+
+        if metadata["database_kind"] != "metaphlan":
+            raise ValidationError(
+                "Unsupported MetaPhlAn database kind "
+                f"{metadata['database_kind']!r}."
+            )
+
+
+class MetaphlanDatabaseFileFormat(model.BinaryFileFormat):
+    def _validate_(self, level):
+        if self.path.stat().st_size == 0:
+            raise ValidationError(
+                f"MetaPhlAn database payload file {self.path.name!r} is empty."
+            )
+
+
+class MetaphlanDatabaseDirFmt(model.DirectoryFormat):
+    metadata = model.File(
+        "metadata.json", format=MetaphlanDatabaseMetadataFormat
+    )
+    payload = model.FileCollection(
+        r"data/.+", format=MetaphlanDatabaseFileFormat
     )
 
     @payload.set_path_maker

@@ -18,6 +18,7 @@ from q2_humann import __version__
 from q2_humann._methods import (
     TRANSLATED_SEARCH_DATABASE_BUILDS,
     download_chocophlan_database,
+    download_metaphlan_database,
     download_translated_search_database,
     duplicate_table,
     run_humann,
@@ -41,6 +42,10 @@ from q2_humann._types_and_formats import (
     HumannReactionDirectoryFormat,
     HumannReactionFormat,
     HumannReactionTable,
+    MetaphlanDatabase,
+    MetaphlanDatabaseDirFmt,
+    MetaphlanDatabaseFileFormat,
+    MetaphlanDatabaseMetadataFormat,
     HumannDatabaseMetadataFormat,
     MetaphlanMergedAbundanceDirectoryFormat,
     MetaphlanMergedAbundanceFormat,
@@ -70,6 +75,7 @@ plugin.register_semantic_types(
     HumannPathAbundanceTable,
     HumannGeneFamilyTable,
     HumannReactionTable,
+    MetaphlanDatabase,
     MetaphlanMergedAbundanceTable,
 )
 plugin.register_formats(
@@ -82,6 +88,9 @@ plugin.register_formats(
     HumannGeneFamilyDirectoryFormat,
     HumannReactionFormat,
     HumannReactionDirectoryFormat,
+    MetaphlanDatabaseMetadataFormat,
+    MetaphlanDatabaseFileFormat,
+    MetaphlanDatabaseDirFmt,
     MetaphlanMergedAbundanceFormat,
     MetaphlanMergedAbundanceDirectoryFormat,
 )
@@ -97,6 +106,13 @@ plugin.register_artifact_class(
     directory_format=HumannDatabaseDirFmt,
     description=(
         "A staged HUMANN translated-search database directory."
+    ),
+)
+plugin.register_artifact_class(
+    MetaphlanDatabase,
+    directory_format=MetaphlanDatabaseDirFmt,
+    description=(
+        "A staged MetaPhlAn database directory."
     ),
 )
 plugin.register_semantic_type_to_format(
@@ -150,6 +166,30 @@ plugin.methods.register_function(
     description=(
         "Download the full HUMANN ChocoPhlAn nucleotide database without "
         "updating the user's HUMANN configuration."
+    ),
+    citations=[citations["Beghini-etal-2021"]],
+)
+
+plugin.methods.register_function(
+    function=download_metaphlan_database,
+    inputs={},
+    parameters={
+        "index": Str,
+    },
+    outputs=[("database", MetaphlanDatabase)],
+    input_descriptions={},
+    parameter_descriptions={
+        "index": (
+            "The MetaPhlAn database index to install, such as 'latest' or "
+            "a specific mpa_v... identifier."
+        )
+    },
+    output_descriptions={
+        "database": "The downloaded MetaPhlAn database directory."
+    },
+    name="Download MetaPhlAn database",
+    description=(
+        "Download a MetaPhlAn database into a staged artifact directory."
     ),
     citations=[citations["Beghini-etal-2021"]],
 )

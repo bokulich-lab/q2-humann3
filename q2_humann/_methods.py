@@ -18,6 +18,7 @@ from q2_humann._types_and_formats import (
     HumannGeneFamilyDirectoryFormat,
     HumannPathAbundanceDirectoryFormat,
     HumannReactionDirectoryFormat,
+    MetaphlanDatabaseDirFmt,
     MetaphlanMergedAbundanceDirectoryFormat,
 )
 
@@ -165,12 +166,32 @@ def _copy_directory_contents(source_dir: Path, target_dir: Path) -> None:
             shutil.copy2(path, destination)
 
 
+def _infer_metaphlan_index(install_dir: Path) -> str:
+    for path in sorted(install_dir.glob("*.pkl")):
+        return path.stem
+    raise RuntimeError(
+        "Unable to infer the MetaPhlAn database index from the downloaded "
+        "files."
+    )
+
+
 def _write_database_metadata(
     artifact: HumannDatabaseDirFmt, database_kind: str, build: str
 ) -> None:
     metadata = {
         "database_kind": database_kind,
         "build": build,
+    }
+    with (artifact.path / "metadata.json").open("w") as fh:
+        json.dump(metadata, fh, indent=2, sort_keys=True)
+
+
+def _write_metaphlan_database_metadata(
+    artifact: MetaphlanDatabaseDirFmt, index: str
+) -> None:
+    metadata = {
+        "database_kind": "metaphlan",
+        "index": index,
     }
     with (artifact.path / "metadata.json").open("w") as fh:
         json.dump(metadata, fh, indent=2, sort_keys=True)
@@ -230,6 +251,38 @@ def download_translated_search_database(
         build=build,
         database_kind="translated-search",
     )
+
+
+def download_metaphlan_database(
+    index: str = "latest",
+) -> MetaphlanDatabaseDirFmt:
+    with tempfile.TemporaryDirectory(prefix="q2-metaphlan-db-") as tmpdir:
+        install_dir = Path(tmpdir) / "downloaded-database"
+        install_dir.mkdir()
+
+        cmd = [
+            "metaphlan",
+            "--install",
+            "--db_dir",
+            str(install_dir),
+            "-x",
+            index,
+        ]
+        _run_humann_command(cmd)
+
+        if not any(install_dir.iterdir()):
+            raise RuntimeError(
+                "MetaPhlAn completed successfully but did not produce any "
+                "database files."
+            )
+
+        resolved_index = _infer_metaphlan_index(install_dir)
+        artifact = MetaphlanDatabaseDirFmt()
+        payload_dir = artifact.path / "data"
+        payload_dir.mkdir()
+        _copy_directory_contents(install_dir, payload_dir)
+        _write_metaphlan_database_metadata(artifact, resolved_index)
+        return artifact
 
 
 def run_humann(
