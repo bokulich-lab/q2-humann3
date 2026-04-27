@@ -8,16 +8,10 @@
 
 import json
 from pathlib import Path
-import gzip
 import shutil
 import pandas as pd
 import subprocess
 import tempfile
-
-from q2_types.per_sample_sequences import (
-    SingleLanePerSamplePairedEndFastqDirFmt,
-    SingleLanePerSampleSingleEndFastqDirFmt,
-)
 
 from q2_humann._types_and_formats import (
     HumannDatabaseDirFmt,
@@ -74,18 +68,12 @@ def _run_humann_command(cmd: list[str]) -> None:
     try:
         run_command(cmd)
     except subprocess.CalledProcessError as exc:
-        detail = exc.stderr.strip() or exc.stdout.strip()
+        stderr = (exc.stderr or "").strip()
+        stdout = (exc.stdout or "").strip()
+        detail = stderr or stdout or str(exc)
         raise RuntimeError(
             f"Command failed with exit code {exc.returncode}: {detail}"
         ) from exc
-
-
-def _read_manifest(reads) -> pd.DataFrame:
-    manifest = pd.read_csv(reads.path / "MANIFEST")
-    manifest["absolute_path"] = manifest["filename"].apply(
-        lambda value: str(reads.path / value)
-    )
-    return manifest
 
 
 def _stage_sample_input(
@@ -245,10 +233,7 @@ def download_translated_search_database(
 
 
 def run_humann(
-    reads: (
-        SingleLanePerSampleSingleEndFastqDirFmt
-        | SingleLanePerSamplePairedEndFastqDirFmt
-    ),
+    reads: pd.DataFrame,
     nucleotide_database: HumannDatabaseDirFmt,
     translated_search_database: HumannDatabaseDirFmt,
     threads: int = 1,
@@ -258,14 +243,12 @@ def run_humann(
     MetaphlanMergedAbundanceDirectoryFormat,
     HumannReactionDirectoryFormat,
 ]:
-    manifest = _read_manifest(reads)
-
     with tempfile.TemporaryDirectory(prefix="q2-humann-run-") as tmpdir:
         tmpdir = Path(tmpdir)
         run_output_dir = tmpdir / "humann-output"
         run_output_dir.mkdir()
 
-        for sample_id, sample_manifest in manifest.groupby("sample-id"):
+        for sample_id, sample_manifest in reads.groupby("sample-id"):
             sample_work_dir = tmpdir / sample_id
             sample_work_dir.mkdir()
             staged_input = _stage_sample_input(

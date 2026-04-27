@@ -23,6 +23,10 @@ from q2_humann._methods import (
     run_humann,
 )
 from q2_humann._transformers import humann_database_dirfmt_to_path
+from q2_humann._transformers import (
+    paired_end_reads_to_manifest_df,
+    single_end_reads_to_manifest_df,
+)
 from q2_humann._types_and_formats import (
     ChocoPhlAn,
     HumannDatabase,
@@ -113,6 +117,8 @@ plugin.register_semantic_type_to_format(
 )
 
 plugin.register_transformer(humann_database_dirfmt_to_path)
+plugin.register_transformer(single_end_reads_to_manifest_df)
+plugin.register_transformer(paired_end_reads_to_manifest_df)
 
 plugin.methods.register_function(
     function=duplicate_table,

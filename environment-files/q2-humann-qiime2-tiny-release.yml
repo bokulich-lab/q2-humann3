@@ -6,6 +6,7 @@ channels:
 dependencies:
   - rachis-tiny
   - humann
+  - metaphlan
   # Note 1: Add any additional conda dependencies here.
   - pip
   # - pip:
