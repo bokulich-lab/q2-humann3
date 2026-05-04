@@ -7,7 +7,6 @@
 # ----------------------------------------------------------------------------
 
 from qiime2.plugin import Citations, Choices, Int, Plugin, Range, Str
-from q2_types.feature_table import FeatureTable, Frequency
 from q2_types.sample_data import SampleData
 from q2_types.per_sample_sequences import (
     PairedEndSequencesWithQuality,
@@ -15,14 +14,13 @@ from q2_types.per_sample_sequences import (
 )
 
 from q2_humann import __version__
-from q2_humann._methods import (
+from q2_humann.db import (
     TRANSLATED_SEARCH_DATABASE_BUILDS,
     download_chocophlan_database,
     download_metaphlan_database,
     download_translated_search_database,
-    duplicate_table,
-    run_humann,
 )
+from q2_humann.run import run_humann
 from q2_humann._transformers import humann_database_dirfmt_to_path
 from q2_humann._transformers import (
     paired_end_reads_to_manifest_df,
@@ -118,20 +116,6 @@ plugin.register_transformer(single_end_reads_to_manifest_df)
 plugin.register_transformer(paired_end_reads_to_manifest_df)
 
 plugin.methods.register_function(
-    function=duplicate_table,
-    inputs={'table': FeatureTable[Frequency]},
-    parameters={},
-    outputs=[('new_table', FeatureTable[Frequency])],
-    input_descriptions={'table': 'The feature table to be duplicated.'},
-    parameter_descriptions={},
-    output_descriptions={'new_table': 'The duplicated feature table.'},
-    name='Duplicate table',
-    description=("Create a copy of a feature table with a new uuid. "
-                 "This is for demonstration purposes only. "),
-    citations=[]
-)
-
-plugin.methods.register_function(
     function=download_chocophlan_database,
     inputs={},
     parameters={},
@@ -224,7 +208,9 @@ plugin.methods.register_function(
         "gene_families": "Merged HUMANN gene family abundance table.",
         "path_abundance": "Merged HUMANN pathway abundance table.",
         "metaphlan_profile": "Merged MetaPhlAn taxonomic profile table.",
-        "reactions": "Reaction table derived from merged HUMANN gene families.",
+        "reactions": (
+            "Reaction table derived from merged HUMANN gene families."
+        ),
     },
     name="Run HUMANN",
     description=(
