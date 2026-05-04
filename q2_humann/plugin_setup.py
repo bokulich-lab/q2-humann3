@@ -33,12 +33,6 @@ from q2_humann._types_and_formats import (
     HumannDatabase,
     HumannDatabaseDirFmt,
     HumannDatabaseFileFormat,
-    HumannGeneFamilyDirectoryFormat,
-    HumannGeneFamilyFormat,
-    HumannGeneFamilyTable,
-    HumannPathAbundanceDirectoryFormat,
-    HumannPathAbundanceFormat,
-    HumannPathAbundanceTable,
     HumannReactionDirectoryFormat,
     HumannReactionFormat,
     HumannReactionTable,
@@ -47,10 +41,18 @@ from q2_humann._types_and_formats import (
     MetaphlanDatabaseFileFormat,
     MetaphlanDatabaseMetadataFormat,
     HumannDatabaseMetadataFormat,
+    TranslatedSearch,
+)
+from q2_sapienns.plugin_setup import (
+    HumannGeneFamilyDirectoryFormat,
+    HumannGeneFamilyFormat,
+    HumannGeneFamilyTable,
+    HumannPathAbundanceDirectoryFormat,
+    HumannPathAbundanceFormat,
+    HumannPathAbundanceTable,
     MetaphlanMergedAbundanceDirectoryFormat,
     MetaphlanMergedAbundanceFormat,
     MetaphlanMergedAbundanceTable,
-    TranslatedSearch,
 )
 
 citations = Citations.load("citations.bib", package="q2_humann")
@@ -72,27 +74,18 @@ plugin.register_semantic_types(
     HumannDatabase,
     ChocoPhlAn,
     TranslatedSearch,
-    HumannPathAbundanceTable,
-    HumannGeneFamilyTable,
     HumannReactionTable,
     MetaphlanDatabase,
-    MetaphlanMergedAbundanceTable,
 )
 plugin.register_formats(
     HumannDatabaseMetadataFormat,
     HumannDatabaseFileFormat,
     HumannDatabaseDirFmt,
-    HumannPathAbundanceFormat,
-    HumannPathAbundanceDirectoryFormat,
-    HumannGeneFamilyFormat,
-    HumannGeneFamilyDirectoryFormat,
     HumannReactionFormat,
     HumannReactionDirectoryFormat,
     MetaphlanDatabaseMetadataFormat,
     MetaphlanDatabaseFileFormat,
     MetaphlanDatabaseDirFmt,
-    MetaphlanMergedAbundanceFormat,
-    MetaphlanMergedAbundanceDirectoryFormat,
 )
 plugin.register_artifact_class(
     HumannDatabase[ChocoPhlAn],
@@ -116,20 +109,8 @@ plugin.register_artifact_class(
     ),
 )
 plugin.register_semantic_type_to_format(
-    HumannPathAbundanceTable,
-    HumannPathAbundanceDirectoryFormat,
-)
-plugin.register_semantic_type_to_format(
-    HumannGeneFamilyTable,
-    HumannGeneFamilyDirectoryFormat,
-)
-plugin.register_semantic_type_to_format(
     HumannReactionTable,
     HumannReactionDirectoryFormat,
-)
-plugin.register_semantic_type_to_format(
-    MetaphlanMergedAbundanceTable,
-    MetaphlanMergedAbundanceDirectoryFormat,
 )
 
 plugin.register_transformer(humann_database_dirfmt_to_path)
@@ -175,6 +156,7 @@ plugin.methods.register_function(
     inputs={},
     parameters={
         "index": Str,
+        "cpus": Int % Range(1, None),
     },
     outputs=[("database", MetaphlanDatabase)],
     input_descriptions={},
@@ -182,7 +164,11 @@ plugin.methods.register_function(
         "index": (
             "The MetaPhlAn database index to install, such as 'latest' or "
             "a specific mpa_v... identifier."
-        )
+        ),
+        "cpus": (
+            "Number of CPUs to pass to MetaPhlAn's Bowtie2 index build "
+            "step via --nproc."
+        ),
     },
     output_descriptions={
         "database": "The downloaded MetaPhlAn database directory."
@@ -202,6 +188,7 @@ plugin.methods.register_function(
         ],
         "nucleotide_database": HumannDatabase[ChocoPhlAn],
         "translated_search_database": HumannDatabase[TranslatedSearch],
+        "metaphlan_database": MetaphlanDatabase,
     },
     parameters={
         "threads": Int % Range(1, None),
@@ -225,6 +212,10 @@ plugin.methods.register_function(
             "The staged translated-search database artifact to use for "
             "protein search."
         ),
+        "metaphlan_database": (
+            "The staged MetaPhlAn database artifact to use during taxonomic "
+            "prescreening."
+        ),
     },
     parameter_descriptions={
         "threads": "Number of worker threads to pass to HUMANN.",
@@ -240,7 +231,8 @@ plugin.methods.register_function(
         "Run HUMANN on each sample in a single-end or paired-end read "
         "artifact, then merge the resulting gene family, pathway abundance, "
         "and MetaPhlAn profile tables across samples and derive a reactions "
-        "table from the merged gene families."
+        "table from the merged gene families, using staged HUMANN and "
+        "MetaPhlAn database artifacts."
     ),
     citations=[citations["Beghini-etal-2021"]],
 )

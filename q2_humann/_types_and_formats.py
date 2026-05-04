@@ -11,6 +11,7 @@ from pathlib import Path
 import json
 
 from qiime2.plugin import SemanticType, ValidationError, model
+from q2_sapienns.plugin_setup import HumannTableFormat
 
 HumannDatabase = SemanticType("HumannDatabase", field_names="kind")
 ChocoPhlAn = SemanticType(
@@ -19,10 +20,8 @@ ChocoPhlAn = SemanticType(
 TranslatedSearch = SemanticType(
     "TranslatedSearch", variant_of=HumannDatabase.field["kind"]
 )
-HumannPathAbundanceTable = SemanticType("HumannPathAbundanceTable")
-HumannGeneFamilyTable = SemanticType("HumannGeneFamilyTable")
+
 HumannReactionTable = SemanticType("HumannReactionTable")
-MetaphlanMergedAbundanceTable = SemanticType("MetaphlanMergedAbundanceTable")
 MetaphlanDatabase = SemanticType("MetaphlanDatabase")
 
 
@@ -111,45 +110,8 @@ class MetaphlanDatabaseDirFmt(model.DirectoryFormat):
         return str(Path("data") / relative_path)
 
 
-class HumannTableFormat(model.TextFileFormat):
-    _unit_label = None
-
-    def _equal_number_of_columns(self, n_lines):
-        with self.open() as fh:
-            header_line = fh.readline().strip()
-            header_fields = header_line.split('\t')
-            n_header_fields = len(header_fields)
-            if n_header_fields < 2:
-                raise ValidationError('No sample columns appear to be present.')
-            for sample_id in header_fields[1:]:
-                if not sample_id.endswith(self._unit_label):
-                    raise ValidationError(
-                        'Expected sample ids (e.g., %s) to end with unit '
-                        'descriptor %s' % (sample_id, self._unit_label)
-                    )
-            for idx, line in enumerate(fh, 2):
-                if n_lines is not None and idx > n_lines + 1:
-                    break
-                n_fields = len(line.split('\t'))
-                if n_fields != n_header_fields:
-                    raise ValidationError(
-                        'Number of columns on line %d is inconsistent with '
-                        'the header line.' % line)
-
-    def _validate_(self, level):
-        level_to_n_lines = {'min': 5, 'max': None}
-        self._equal_number_of_columns(level_to_n_lines[level])
-
-
-class HumannPathAbundanceFormat(HumannTableFormat):
-    _unit_label = 'Abundance'
-
-
-class HumannGeneFamilyFormat(HumannTableFormat):
-    _unit_label = 'RPKs'
-
-
 class HumannReactionFormat(HumannTableFormat):
+    # Regrouped from joined genefamilies; column names keep the RPKs suffix.
     _unit_label = 'RPKs'
 
 
@@ -190,16 +152,6 @@ class MetaphlanMergedAbundanceFormat(model.TextFileFormat):
         level_to_n_lines = {'min': 5, 'max': None}
         self._equal_number_of_columns(level_to_n_lines[level])
 
-
-HumannPathAbundanceDirectoryFormat = model.SingleFileDirectoryFormat(
-    'HumannPathAbundanceDirectoryFormat', 'table.tsv',
-    HumannPathAbundanceFormat
-)
-
-HumannGeneFamilyDirectoryFormat = model.SingleFileDirectoryFormat(
-    'HumannGeneFamilyDirectoryFormat', 'table.tsv',
-    HumannGeneFamilyFormat
-)
 
 HumannReactionDirectoryFormat = model.SingleFileDirectoryFormat(
     'HumannReactionDirectoryFormat', 'table.tsv',

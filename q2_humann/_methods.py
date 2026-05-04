@@ -15,11 +15,13 @@ import tempfile
 
 from q2_humann._types_and_formats import (
     HumannDatabaseDirFmt,
-    HumannGeneFamilyDirectoryFormat,
-    HumannPathAbundanceDirectoryFormat,
     HumannReactionDirectoryFormat,
     MetaphlanDatabaseDirFmt,
-    MetaphlanMergedAbundanceDirectoryFormat,
+)
+from q2_sapienns.plugin_setup import (
+    HumannGeneFamilyDirectoryFormat,
+    HumannPathAbundanceDirectoryFormat,
+    MetaphlanMergedAbundanceDirectoryFormat
 )
 
 EXTERNAL_CMD_WARNING = (
@@ -123,10 +125,83 @@ def _join_humann_tables(
     _run_humann_command(cmd)
 
 
+def _collect_metaphlan_profiles(
+    run_output_dir: Path, destination_dir: Path
+) -> None:
+    destination_dir.mkdir()
+    profile_paths = sorted(
+        run_output_dir.glob("*_humann_temp/*_metaphlan_bugs_list.tsv")
+    )
+    if not profile_paths:
+        raise RuntimeError(
+            "HUMANN did not produce any MetaPhlAn bugs-list outputs to join."
+        )
+
+    for path in profile_paths:
+        shutil.copy2(path, destination_dir / path.name)
+
+
+def _merge_metaphlan_profiles(
+    profile_dir: Path, output_path: Path
+) -> None:
+    profile_paths = sorted(profile_dir.glob("*_metaphlan_bugs_list.tsv"))
+    if not profile_paths:
+        raise RuntimeError(
+            "No MetaPhlAn bugs-list files were available to merge."
+        )
+
+    sample_ids = []
+    row_order = []
+    row_data = {}
+
+    for path in profile_paths:
+        sample_id = path.name.removesuffix("_metaphlan_bugs_list.tsv")
+        sample_ids.append(sample_id)
+
+        with path.open() as fh:
+            for line in fh:
+                if line.startswith("#") or not line.strip():
+                    continue
+
+                fields = line.rstrip("\n").split("\t")
+                if len(fields) < 3:
+                    raise RuntimeError(
+                        "Unexpected MetaPhlAn bugs-list row with fewer than "
+                        f"three columns: {line.rstrip()!r}"
+                    )
+                clade_name, tax_id, abundance = fields[:3]
+                if clade_name not in row_data:
+                    row_order.append(clade_name)
+                    row_data[clade_name] = {
+                        "tax_id": tax_id,
+                        "values": {},
+                    }
+                row_data[clade_name]["values"][sample_id] = abundance
+
+    with output_path.open("w") as fh:
+        header = "\t".join(["clade_name", "NCBI_tax_id", *sample_ids])
+        fh.write(header + "\n")
+
+        for clade_name in row_order:
+            tax_id = row_data[clade_name]["tax_id"]
+            abundances = [
+                row_data[clade_name]["values"].get(sample_id, "0.0")
+                for sample_id in sample_ids
+            ]
+            row = "\t".join([clade_name, tax_id, *abundances])
+            fh.write(row + "\n")
+
+
 def _read_database_build(database: HumannDatabaseDirFmt) -> str:
     with (database.path / "metadata.json").open() as fh:
         metadata = json.load(fh)
     return metadata["build"]
+
+
+def _read_metaphlan_index(database: MetaphlanDatabaseDirFmt) -> str:
+    with (database.path / "metadata.json").open() as fh:
+        metadata = json.load(fh)
+    return metadata["index"]
 
 
 def _regroup_gene_families_to_reactions(
@@ -173,6 +248,48 @@ def _infer_metaphlan_index(install_dir: Path) -> str:
         "Unable to infer the MetaPhlAn database index from the downloaded "
         "files."
     )
+
+
+def _validate_metaphlan_database(
+    install_dir: Path, index: str
+) -> None:
+    pkl_path = install_dir / f"{index}.pkl"
+    if not pkl_path.exists():
+        raise RuntimeError(
+            "MetaPhlAn download did not produce the expected database pickle "
+            f"for index {index!r}."
+        )
+
+    bt2_ext = None
+    if (install_dir / f"{index}.1.bt2").exists():
+        bt2_ext = "bt2"
+    elif (install_dir / f"{index}.1.bt2l").exists():
+        bt2_ext = "bt2l"
+
+    if bt2_ext is None:
+        raise RuntimeError(
+            "MetaPhlAn download did not produce Bowtie2 index files for "
+            f"index {index!r}."
+        )
+
+    required_suffixes = (
+        f"1.{bt2_ext}",
+        f"2.{bt2_ext}",
+        f"3.{bt2_ext}",
+        f"4.{bt2_ext}",
+        f"rev.1.{bt2_ext}",
+        f"rev.2.{bt2_ext}",
+    )
+    missing = [
+        suffix for suffix in required_suffixes
+        if not (install_dir / f"{index}.{suffix}").exists()
+    ]
+    if missing:
+        missing_str = ", ".join(missing)
+        raise RuntimeError(
+            "MetaPhlAn download produced an incomplete Bowtie2 database for "
+            f"index {index!r}. Missing files: {missing_str}."
+        )
 
 
 def _write_database_metadata(
@@ -255,6 +372,7 @@ def download_translated_search_database(
 
 def download_metaphlan_database(
     index: str = "latest",
+    cpus: int = 1,
 ) -> MetaphlanDatabaseDirFmt:
     with tempfile.TemporaryDirectory(prefix="q2-metaphlan-db-") as tmpdir:
         install_dir = Path(tmpdir) / "downloaded-database"
@@ -263,10 +381,12 @@ def download_metaphlan_database(
         cmd = [
             "metaphlan",
             "--install",
-            "--db_dir",
+            "--bowtie2db",
             str(install_dir),
             "-x",
             index,
+            "--nproc",
+            str(cpus),
         ]
         _run_humann_command(cmd)
 
@@ -277,6 +397,7 @@ def download_metaphlan_database(
             )
 
         resolved_index = _infer_metaphlan_index(install_dir)
+        _validate_metaphlan_database(install_dir, resolved_index)
         artifact = MetaphlanDatabaseDirFmt()
         payload_dir = artifact.path / "data"
         payload_dir.mkdir()
@@ -289,17 +410,21 @@ def run_humann(
     reads: pd.DataFrame,
     nucleotide_database: HumannDatabaseDirFmt,
     translated_search_database: HumannDatabaseDirFmt,
+    metaphlan_database: MetaphlanDatabaseDirFmt,
     threads: int = 1,
-) -> tuple[
-    HumannGeneFamilyDirectoryFormat,
-    HumannPathAbundanceDirectoryFormat,
-    MetaphlanMergedAbundanceDirectoryFormat,
-    HumannReactionDirectoryFormat,
-]:
+) -> (HumannGeneFamilyDirectoryFormat,
+      HumannPathAbundanceDirectoryFormat,
+      MetaphlanMergedAbundanceDirectoryFormat,
+      HumannReactionDirectoryFormat):
     with tempfile.TemporaryDirectory(prefix="q2-humann-run-") as tmpdir:
         tmpdir = Path(tmpdir)
         run_output_dir = tmpdir / "humann-output"
         run_output_dir.mkdir()
+        metaphlan_database_dir = metaphlan_database.path / "data"
+        metaphlan_index = _read_metaphlan_index(metaphlan_database)
+        metaphlan_options = (
+            f"--bowtie2db {metaphlan_database_dir} -x {metaphlan_index}"
+        )
 
         for sample_id, sample_manifest in reads.groupby("sample-id"):
             sample_work_dir = tmpdir / sample_id
@@ -319,9 +444,11 @@ def run_humann(
                 "--threads",
                 str(threads),
                 "--nucleotide-database",
-                str(nucleotide_database.path / "data"),
+                str(nucleotide_database.path / "data" / "chocophlan"),
                 "--protein-database",
-                str(translated_search_database.path / "data"),
+                str(translated_search_database.path / "data" / "uniref"),
+                "--metaphlan-options",
+                metaphlan_options,
                 "--output-format",
                 "tsv",
             ]
@@ -331,14 +458,18 @@ def run_humann(
         joined_path_abundance = tmpdir / "joined_pathabundance.tsv"
         joined_metaphlan_profile = tmpdir / "joined_metaphlan_profile.tsv"
         joined_reactions = tmpdir / "joined_reactions.tsv"
+        metaphlan_profile_input_dir = tmpdir / "metaphlan-profile-input"
         _join_humann_tables(
             run_output_dir, "genefamilies", joined_gene_families
         )
         _join_humann_tables(
             run_output_dir, "pathabundance", joined_path_abundance
         )
-        _join_humann_tables(
-            run_output_dir, "metaphlan_profile", joined_metaphlan_profile
+        _collect_metaphlan_profiles(
+            run_output_dir, metaphlan_profile_input_dir
+        )
+        _merge_metaphlan_profiles(
+            metaphlan_profile_input_dir, joined_metaphlan_profile
         )
         _regroup_gene_families_to_reactions(
             joined_gene_families,

@@ -1,0 +1,14 @@
+name: q2-humann-tiny
+channels:
+- https://packages.qiime2.org/qiime2/2026.4/tiny/released
+- conda-forge
+- bioconda
+dependencies:
+  - rachis-tiny
+  - bowtie2
+  - humann<4
+  - metaphlan<4
+  - pip
+  - pip:
+  #   - q2-humann@git+https://github.com/REPO-OWNER/q2-humann.git@DEFAULT-BRANCH
+    - q2-sapienns@git+https://github.com/qiime2/q2-sapienns.git@2026.4.0

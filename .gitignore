@@ -144,3 +144,5 @@ cython_debug/
 
 # Version file from versioningit
 _version.py
+
+cache
