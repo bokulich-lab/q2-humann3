@@ -1,0 +1,375 @@
+# ----------------------------------------------------------------------------
+# Copyright (c) 2024, Michal Ziemski.
+#
+# Distributed under the terms of the Modified BSD License.
+#
+# The full license is in the file LICENSE, distributed with this software.
+# ----------------------------------------------------------------------------
+
+import json
+import gzip
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
+
+import pandas as pd
+from qiime2.plugin.testing import TestPluginBase
+
+from q2_humann.run import (
+    _collect_metaphlan_profiles,
+    _merge_metaphlan_profiles,
+    _regroup_gene_families_to_reactions,
+    _stage_sample_input,
+    run_humann,
+)
+from q2_humann._types_and_formats import (
+    HumannDatabaseDirFmt,
+    HumannReactionDirectoryFormat,
+    MetaphlanDatabaseDirFmt,
+)
+from q2_sapienns.plugin_setup import (
+    HumannGeneFamilyDirectoryFormat,
+    HumannPathAbundanceDirectoryFormat,
+    MetaphlanMergedAbundanceDirectoryFormat,
+)
+
+
+class RunHumannTests(TestPluginBase):
+    package = "q2_humann.tests"
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.compressed_reads_dir = Path(self.temp_dir.name)
+
+    def _gzip_fixture(self, fixture_name: str) -> str:
+        source_path = Path(self.get_data_path(fixture_name))
+        destination_path = self.compressed_reads_dir / f"{fixture_name}.gz"
+        with source_path.open("rb") as source_fh:
+            with gzip.GzipFile(
+                filename="",
+                mode="wb",
+                fileobj=destination_path.open("wb"),
+                mtime=0,
+            ) as destination_fh:
+                destination_fh.write(source_fh.read())
+        return str(destination_path)
+
+    def _make_reads_manifest(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "sample-id": "sample-a",
+                    "absolute_path": self._gzip_fixture(
+                        "sample-a-forward.fastq"
+                    ),
+                    "direction": "forward",
+                },
+                {
+                    "sample-id": "sample-a",
+                    "absolute_path": self._gzip_fixture(
+                        "sample-a-reverse.fastq"
+                    ),
+                    "direction": "reverse",
+                },
+                {
+                    "sample-id": "sample-b",
+                    "absolute_path": self._gzip_fixture(
+                        "sample-b-forward.fastq"
+                    ),
+                    "direction": "forward",
+                },
+            ]
+        )
+
+    def _make_humann_database(
+        self, database_kind: str, build: str
+    ) -> HumannDatabaseDirFmt:
+        database = HumannDatabaseDirFmt()
+        data_dir = database.path / "data"
+        data_dir.mkdir()
+        (data_dir / database_kind).mkdir()
+        with (database.path / "metadata.json").open("w") as fh:
+            json.dump(
+                {"database_kind": database_kind, "build": build},
+                fh,
+            )
+        return database
+
+    def _make_metaphlan_database(self) -> MetaphlanDatabaseDirFmt:
+        database = MetaphlanDatabaseDirFmt()
+        data_dir = database.path / "data"
+        data_dir.mkdir()
+        (data_dir / "mpa_vTest.pkl").write_bytes(b"taxonomy")
+        with (database.path / "metadata.json").open("w") as fh:
+            json.dump(
+                {"database_kind": "metaphlan", "index": "mpa_vTest"},
+                fh,
+            )
+        return database
+
+    def _write_metaphlan_profile(
+        self, path: Path, clade_name: str, tax_id: str, abundance: str
+    ) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "\n".join(
+                [
+                    "#mpa_vTest",
+                    f"{clade_name}\t{tax_id}\t{abundance}",
+                    "",
+                ]
+            )
+        )
+
+    def test_stage_sample_input_copies_single_end_reads(self):
+        manifest = self._make_reads_manifest()
+        sample_manifest = manifest.loc[manifest["sample-id"] == "sample-b"]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            observed = _stage_sample_input(
+                sample_manifest, "sample-b", Path(tmpdir)
+            )
+
+            self.assertEqual(observed.name, "sample-b.fastq.gz")
+            with open(self.get_data_path("sample-b-forward.fastq")) as fh:
+                expected = fh.read()
+            self.assertEqual(
+                gzip.decompress(observed.read_bytes()).decode(), expected
+            )
+
+    def test_stage_sample_input_concatenates_paired_end_reads(self):
+        manifest = self._make_reads_manifest()
+        sample_manifest = manifest.loc[manifest["sample-id"] == "sample-a"]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            observed = _stage_sample_input(
+                sample_manifest, "sample-a", Path(tmpdir)
+            )
+
+            expected = (
+                Path(self.get_data_path("sample-a-forward.fastq")).read_text()
+                + Path(
+                    self.get_data_path("sample-a-reverse.fastq")
+                ).read_text()
+            )
+            self.assertEqual(
+                gzip.decompress(observed.read_bytes()).decode(), expected
+            )
+
+    def test_stage_sample_input_fails_when_sample_has_no_reads(self):
+        manifest = pd.DataFrame(
+            columns=["sample-id", "absolute_path", "direction"]
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaisesRegex(RuntimeError, "No reads found"):
+                _stage_sample_input(manifest, "sample-c", Path(tmpdir))
+
+    def test_collect_metaphlan_profiles(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+            run_output_dir = tmpdir / "humann-output"
+            destination_dir = tmpdir / "profile-input"
+            self._write_metaphlan_profile(
+                run_output_dir
+                / "sample-a_humann_temp"
+                / "sample-a_metaphlan_bugs_list.tsv",
+                "k__Bacteria",
+                "2",
+                "42.0",
+            )
+
+            _collect_metaphlan_profiles(run_output_dir, destination_dir)
+
+            self.assertTrue(
+                (
+                    destination_dir
+                    / "sample-a_metaphlan_bugs_list.tsv"
+                ).exists()
+            )
+
+    def test_collect_metaphlan_profiles_fails_when_missing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaisesRegex(
+                RuntimeError, "did not produce any MetaPhlAn"
+            ):
+                _collect_metaphlan_profiles(
+                    Path(tmpdir) / "humann-output",
+                    Path(tmpdir) / "profile-input",
+                )
+
+    def test_merge_metaphlan_profiles(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+            profile_dir = tmpdir / "profiles"
+            profile_dir.mkdir()
+            self._write_metaphlan_profile(
+                profile_dir / "sample-a_metaphlan_bugs_list.tsv",
+                "k__Bacteria",
+                "2",
+                "42.0",
+            )
+            self._write_metaphlan_profile(
+                profile_dir / "sample-b_metaphlan_bugs_list.tsv",
+                "k__Archaea",
+                "2157",
+                "7.5",
+            )
+            output_path = tmpdir / "merged.tsv"
+
+            _merge_metaphlan_profiles(profile_dir, output_path)
+
+            self.assertEqual(
+                output_path.read_text(),
+                "\n".join(
+                    [
+                        "clade_name\tNCBI_tax_id\tsample-a\tsample-b",
+                        "k__Bacteria\t2\t42.0\t0.0",
+                        "k__Archaea\t2157\t0.0\t7.5",
+                        "",
+                    ]
+                ),
+            )
+
+    def test_merge_metaphlan_profiles_fails_on_bad_row(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+            profile_dir = tmpdir / "profiles"
+            profile_dir.mkdir()
+            (profile_dir / "sample-a_metaphlan_bugs_list.tsv").write_text(
+                "k__Bacteria\t2\n"
+            )
+
+            with self.assertRaisesRegex(
+                RuntimeError, "fewer than three columns"
+            ):
+                _merge_metaphlan_profiles(
+                    profile_dir, tmpdir / "merged.tsv"
+                )
+
+    def test_regroup_gene_families_to_reactions_uses_uniref50_groups(self):
+        database = self._make_humann_database(
+            "translated-search", "uniref50_diamond"
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+            input_path = tmpdir / "genefamilies.tsv"
+            output_path = tmpdir / "reactions.tsv"
+            input_path.write_text("feature\tsample-a\nUniRef50_A\t1.0\n")
+
+            with patch("q2_humann.run.run_humann_command") as run_command:
+                _regroup_gene_families_to_reactions(
+                    input_path, database, output_path
+                )
+
+        run_command.assert_called_once_with(
+            [
+                "humann_regroup_table",
+                "--input",
+                str(input_path),
+                "--groups",
+                "uniref50_rxn",
+                "--output",
+                str(output_path),
+            ]
+        )
+
+    def test_regroup_gene_families_to_reactions_fails_on_unknown_build(self):
+        database = self._make_humann_database(
+            "translated-search", "custom_diamond"
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaisesRegex(
+                RuntimeError, "Unsupported translated-search"
+            ):
+                _regroup_gene_families_to_reactions(
+                    Path(tmpdir) / "genefamilies.tsv",
+                    database,
+                    Path(tmpdir) / "reactions.tsv",
+                )
+
+    def test_run_humann(self):
+        reads = self._make_reads_manifest()
+        nucleotide_database = self._make_humann_database(
+            "chocophlan", "full"
+        )
+        translated_search_database = self._make_humann_database(
+            "translated-search", "uniref90_diamond"
+        )
+        metaphlan_database = self._make_metaphlan_database()
+
+        def _mock_run_command(cmd):
+            if cmd[0] == "humann":
+                run_output_dir = Path(cmd[cmd.index("--output") + 1])
+                sample_id = cmd[cmd.index("--output-basename") + 1]
+                self._write_metaphlan_profile(
+                    run_output_dir
+                    / f"{sample_id}_humann_temp"
+                    / f"{sample_id}_metaphlan_bugs_list.tsv",
+                    "k__Bacteria",
+                    "2",
+                    "42.0",
+                )
+            elif cmd[0] == "humann_join_tables":
+                output_path = Path(cmd[cmd.index("--output") + 1])
+                table_name = cmd[cmd.index("--file_name") + 1]
+                output_path.write_text(
+                    f"{table_name}\tsample-a\tsample-b\nfeature\t1\t2\n"
+                )
+            elif cmd[0] == "humann_regroup_table":
+                output_path = Path(cmd[cmd.index("--output") + 1])
+                output_path.write_text(
+                    "reaction\tsample-a\tsample-b\nR1\t1\t2\n"
+                )
+            else:
+                raise AssertionError(f"Unexpected command: {cmd!r}")
+
+        with patch(
+            "q2_humann.run.run_humann_command",
+            side_effect=_mock_run_command,
+        ) as run_command:
+            observed = run_humann(
+                reads,
+                nucleotide_database,
+                translated_search_database,
+                metaphlan_database,
+                threads=3,
+            )
+
+        gene_families, path_abundance, metaphlan_profile, reactions = observed
+        self.assertIsInstance(
+            gene_families, HumannGeneFamilyDirectoryFormat
+        )
+        self.assertIsInstance(
+            path_abundance, HumannPathAbundanceDirectoryFormat
+        )
+        self.assertIsInstance(
+            metaphlan_profile, MetaphlanMergedAbundanceDirectoryFormat
+        )
+        self.assertIsInstance(reactions, HumannReactionDirectoryFormat)
+        self.assertTrue((gene_families.path / "table.tsv").exists())
+        self.assertTrue((path_abundance.path / "table.tsv").exists())
+        self.assertTrue((metaphlan_profile.path / "table.tsv").exists())
+        self.assertTrue((reactions.path / "table.tsv").exists())
+        self.assertEqual(run_command.call_count, 5)
+        first_humann_cmd = run_command.call_args_list[0].args[0]
+        self.assertEqual(first_humann_cmd[0], "humann")
+        self.assertEqual(
+            first_humann_cmd[
+                first_humann_cmd.index("--output-basename") + 1
+            ],
+            "sample-a",
+        )
+        self.assertIn(
+            f"--bowtie2db {metaphlan_database.path / 'data'} -x mpa_vTest",
+            first_humann_cmd,
+        )
+        regroup_cmd = run_command.call_args_list[4].args[0]
+        self.assertEqual(regroup_cmd[0], "humann_regroup_table")
+        self.assertEqual(
+            regroup_cmd[regroup_cmd.index("--groups") + 1],
+            "uniref90_rxn",
+        )
