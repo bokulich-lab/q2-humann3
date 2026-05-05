@@ -7,6 +7,7 @@
 # ----------------------------------------------------------------------------
 
 import gzip
+from io import StringIO
 import json
 import os
 from pathlib import Path
@@ -15,18 +16,23 @@ import tempfile
 from unittest.mock import patch
 
 import pandas as pd
+from qiime2 import Artifact
 from qiime2.plugin.testing import TestPluginBase
-
-from q2_humann.run import _run_humann
-from q2_humann._types_and_formats import (
-    HumannDatabaseDirFmt,
-    MetaphlanDatabaseDirFmt,
+from q2_types.per_sample_sequences import (
+    CasavaOneEightSingleLanePerSampleDirFmt,
 )
 
-
-class _ReadsDirFmt:
-    def __init__(self, manifest: pd.DataFrame):
-        self.manifest = manifest
+from q2_humann.plugin_setup import plugin
+from q2_humann._types_and_formats import (
+    HumannDatabaseDirFmt,
+    HumannReactionDirectoryFormat,
+    MetaphlanDatabaseDirFmt,
+)
+from q2_sapienns.plugin_setup import (
+    HumannGeneFamilyDirectoryFormat,
+    HumannPathAbundanceDirectoryFormat,
+    MetaphlanMergedAbundanceDirectoryFormat,
+)
 
 
 class RunHumannIntegrationTests(TestPluginBase):
@@ -37,33 +43,26 @@ class RunHumannIntegrationTests(TestPluginBase):
         self.addCleanup(self.temp_dir.cleanup)
         self.temp_path = Path(self.temp_dir.name)
 
-    def _gzip_fixture(self, fixture_name: str) -> str:
-        source_path = Path(self.get_data_path(fixture_name))
-        destination_path = self.temp_path / f"{fixture_name}.gz"
-        with source_path.open("rb") as source_fh:
-            with gzip.GzipFile(
-                filename="",
-                mode="wb",
-                fileobj=destination_path.open("wb"),
-                mtime=0,
-            ) as destination_fh:
-                destination_fh.write(source_fh.read())
-        return str(destination_path)
-
-    def _make_reads_manifest_for_fixture(
-        self, sample_id: str, fixture_name: str
-    ) -> _ReadsDirFmt:
-        return _ReadsDirFmt(
-            pd.DataFrame(
-                {
-                    "forward": {
-                        sample_id: self._gzip_fixture(fixture_name),
-                    },
-                    "reverse": {
-                        sample_id: None,
-                    },
-                }
+    def _make_reads_artifact_for_fixtures(
+        self, sample_fixtures: dict[str, str]
+    ) -> Artifact:
+        reads = CasavaOneEightSingleLanePerSampleDirFmt()
+        for sample_id, fixture_name in sample_fixtures.items():
+            source_path = Path(self.get_data_path(fixture_name))
+            destination_path = (
+                reads.path / f"{sample_id}_S1_L001_R1_001.fastq.gz"
             )
+            with source_path.open("rb") as source_fh:
+                with gzip.GzipFile(
+                    filename="",
+                    mode="wb",
+                    fileobj=destination_path.open("wb"),
+                    mtime=0,
+                ) as destination_fh:
+                    destination_fh.write(source_fh.read())
+
+        return Artifact.import_data(
+            "SampleData[SequencesWithQuality]", reads
         )
 
     def _make_humann_demo_database(
@@ -93,6 +92,21 @@ class RunHumannIntegrationTests(TestPluginBase):
             )
         return database
 
+    def _make_humann_demo_database_artifact(
+        self,
+        package_dir: str,
+        payload_dir: str,
+        database_kind: str,
+        build: str,
+        semantic_type: str,
+    ) -> Artifact:
+        return Artifact.import_data(
+            semantic_type,
+            self._make_humann_demo_database(
+                package_dir, payload_dir, database_kind, build
+            ),
+        )
+
     def _make_toy_metaphlan_database(self) -> MetaphlanDatabaseDirFmt:
         database = MetaphlanDatabaseDirFmt()
         (database.path / "mpa_vTest.pkl").write_bytes(b"taxonomy")
@@ -102,6 +116,44 @@ class RunHumannIntegrationTests(TestPluginBase):
                 fh,
             )
         return database
+
+    def _make_toy_metaphlan_database_artifact(self) -> Artifact:
+        return Artifact.import_data(
+            "MetaphlanDatabase", self._make_toy_metaphlan_database()
+        )
+
+    def _read_result_table(self, artifact, directory_format) -> pd.DataFrame:
+        table_path = artifact.view(directory_format).path / "table.tsv"
+        lines = table_path.read_text().splitlines()
+        while lines and lines[0].startswith("#mpa_"):
+            lines.pop(0)
+        return pd.read_csv(StringIO("\n".join(lines)), sep="\t")
+
+    def _assert_result_tables_equal(
+        self,
+        observed,
+        expected,
+        directory_format,
+        key_columns: list[str] = None,
+    ) -> None:
+        observed_df = self._read_result_table(observed, directory_format)
+        expected_df = self._read_result_table(expected, directory_format)
+        if key_columns is None:
+            key_columns = [expected_df.columns[0]]
+
+        sample_columns = sorted(
+            column for column in expected_df.columns if column not in key_columns
+        )
+        columns = key_columns + sample_columns
+        observed_df = observed_df[columns].sort_values(
+            key_columns
+        ).reset_index(drop=True)
+        expected_df = expected_df[columns].sort_values(
+            key_columns
+        ).reset_index(drop=True)
+        pd.testing.assert_frame_equal(
+            observed_df, expected_df, check_dtype=False
+        )
 
     def _write_fake_metaphlan_executable(self, bin_dir: Path) -> None:
         executable = bin_dir / "metaphlan"
@@ -128,12 +180,13 @@ Path(sys.argv[sys.argv.index("--bowtie2out") + 1]).write_text("")
         )
         executable.chmod(0o755)
 
-    def test_run_humann_with_humann_demo_data(self):
+    def test_partitioned_pipeline_matches_unpartitioned_run(self):
         missing_executables = [
             executable
             for executable in (
                 "humann",
                 "humann_join_tables",
+                "merge_metaphlan_tables.py",
                 "humann_regroup_table",
                 "bowtie2",
                 "diamond",
@@ -146,46 +199,69 @@ Path(sys.argv[sys.argv.index("--bowtie2out") + 1]).write_text("")
                 + ", ".join(missing_executables)
             )
 
-        reads = self._make_reads_manifest_for_fixture(
-            "demo", "humann-demo.fastq"
+        reads = self._make_reads_artifact_for_fixtures(
+            {
+                "demo-a": "humann-demo.fastq",
+                "demo-b": "humann-demo.fastq",
+            }
         )
-        nucleotide_database = self._make_humann_demo_database(
+        nucleotide_database = self._make_humann_demo_database_artifact(
             "chocophlan_DEMO",
             "chocophlan",
             "chocophlan",
             "full",
+            "HumannDatabase[ChocoPhlAn]",
         )
-        translated_search_database = self._make_humann_demo_database(
+        translated_search_database = self._make_humann_demo_database_artifact(
             "uniref_DEMO",
             "uniref",
             "translated-search",
             "uniref90_diamond",
+            "HumannDatabase[TranslatedSearch]",
         )
-        metaphlan_database = self._make_toy_metaphlan_database()
+        metaphlan_database = self._make_toy_metaphlan_database_artifact()
         fake_bin_dir = self.temp_path / "bin"
         fake_bin_dir.mkdir()
         self._write_fake_metaphlan_executable(fake_bin_dir)
+        run_humann = plugin.actions["run_humann"]
+        run_humann_unpartitioned = plugin.actions["_run_humann"]
 
         with patch.dict(
             os.environ,
             {"PATH": f"{fake_bin_dir}{os.pathsep}{os.environ['PATH']}"},
         ):
-            gene_families, path_abundance, metaphlan_profile, reactions = (
-                _run_humann(
-                    reads,
-                    nucleotide_database,
-                    translated_search_database,
-                    metaphlan_database,
-                )
+            expected = run_humann_unpartitioned(
+                reads=reads,
+                nucleotide_database=nucleotide_database,
+                translated_search_database=translated_search_database,
+                metaphlan_database=metaphlan_database,
+            )
+            observed = run_humann(
+                reads=reads,
+                nucleotide_database=nucleotide_database,
+                translated_search_database=translated_search_database,
+                metaphlan_database=metaphlan_database,
+                num_partitions=2,
             )
 
-        gene_families_text = (gene_families.path / "table.tsv").read_text()
-        path_abundance_text = (path_abundance.path / "table.tsv").read_text()
-        metaphlan_profile_text = (
-            metaphlan_profile.path / "table.tsv"
-        ).read_text()
-        reactions_text = (reactions.path / "table.tsv").read_text()
-        self.assertIn("demo", gene_families_text)
-        self.assertIn("demo", path_abundance_text)
-        self.assertIn("Bacteroides_dorei", metaphlan_profile_text)
-        self.assertIn("demo", reactions_text)
+        self._assert_result_tables_equal(
+            observed.gene_families,
+            expected.gene_families,
+            HumannGeneFamilyDirectoryFormat,
+        )
+        self._assert_result_tables_equal(
+            observed.path_abundance,
+            expected.path_abundance,
+            HumannPathAbundanceDirectoryFormat,
+        )
+        self._assert_result_tables_equal(
+            observed.metaphlan_profile,
+            expected.metaphlan_profile,
+            MetaphlanMergedAbundanceDirectoryFormat,
+            key_columns=["clade_name", "NCBI_tax_id"],
+        )
+        self._assert_result_tables_equal(
+            observed.reactions,
+            expected.reactions,
+            HumannReactionDirectoryFormat,
+        )

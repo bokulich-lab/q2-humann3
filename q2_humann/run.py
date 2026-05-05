@@ -75,6 +75,59 @@ def _join_humann_tables(
         file_name,
     ]
     run_humann_command(cmd)
+    unit_labels = {
+        "genefamilies": "Abundance-RPKs",
+        "pathabundance": "Abundance",
+    }
+    if file_name in unit_labels:
+        _normalize_table_sample_headers(
+            output_path, file_name, unit_labels[file_name]
+        )
+
+
+def _normalize_table_sample_headers(
+    table_path: Path, file_name: str, unit_label: str
+) -> None:
+    """Normalize HUMANN sample headers to include expected unit labels."""
+    lines = table_path.read_text().splitlines()
+    if not lines:
+        raise RuntimeError(f"HUMANN table {table_path} is empty.")
+
+    header = lines[0].split("\t")
+    for idx, field in enumerate(header[1:], start=1):
+        if field.endswith(unit_label):
+            continue
+        if field.endswith(f"_{file_name}"):
+            sample_id = field.removesuffix(f"_{file_name}")
+        else:
+            sample_id = field
+        header[idx] = f"{sample_id}_{unit_label}"
+
+    lines[0] = "\t".join(header)
+    table_path.write_text("\n".join(lines) + "\n")
+    _assert_table_sample_headers_end_with(
+        table_path, unit_label.rsplit("-", 1)[-1]
+    )
+
+
+def _assert_table_sample_headers_end_with(
+    table_path: Path, unit_label: str
+) -> None:
+    """Confirm table sample headers satisfy downstream format validation."""
+    lines = table_path.read_text().splitlines()
+    if not lines:
+        raise RuntimeError(f"HUMANN table {table_path} is empty.")
+
+    header = lines[0].split("\t")
+    invalid_headers = [
+        field for field in header[1:] if not field.endswith(unit_label)
+    ]
+    if invalid_headers:
+        raise RuntimeError(
+            "HUMANN table sample headers were not normalized correctly. "
+            f"Expected sample columns to end with {unit_label!r}, found: "
+            + ", ".join(invalid_headers)
+        )
 
 
 def _merge_metaphlan_profiles(
@@ -157,6 +210,8 @@ def _merge_table_dirfmts(
     tables: list,
     output_dirfmt,
     key_columns: list[str] = None,
+    unit_label: str = None,
+    file_name: str = None,
 ):
     """Merge table directory formats into one output directory format."""
     if not tables:
@@ -176,6 +231,10 @@ def _merge_table_dirfmts(
 
     output = output_dirfmt()
     merged.fillna(0).to_csv(output.path / "table.tsv", sep="\t", index=False)
+    if unit_label is not None:
+        _normalize_table_sample_headers(
+            output.path / "table.tsv", file_name, unit_label
+        )
     return output
 
 
@@ -183,14 +242,24 @@ def collate_gene_families(
     tables: HumannGeneFamilyDirectoryFormat,
 ) -> HumannGeneFamilyDirectoryFormat:
     """Collate HUMANN gene-family tables across partitions."""
-    return _merge_table_dirfmts(tables, HumannGeneFamilyDirectoryFormat)
+    return _merge_table_dirfmts(
+        tables,
+        HumannGeneFamilyDirectoryFormat,
+        unit_label="Abundance-RPKs",
+        file_name="genefamilies",
+    )
 
 
 def collate_path_abundance(
     tables: HumannPathAbundanceDirectoryFormat,
 ) -> HumannPathAbundanceDirectoryFormat:
     """Collate HUMANN pathway-abundance tables across partitions."""
-    return _merge_table_dirfmts(tables, HumannPathAbundanceDirectoryFormat)
+    return _merge_table_dirfmts(
+        tables,
+        HumannPathAbundanceDirectoryFormat,
+        unit_label="Abundance",
+        file_name="pathabundance",
+    )
 
 
 def collate_metaphlan_profiles(
@@ -334,6 +403,10 @@ def _run_humann(
             gene_families_table,
             translated_search_database,
             reactions_table,
+        )
+        _assert_table_sample_headers_end_with(gene_families_table, "RPKs")
+        _assert_table_sample_headers_end_with(
+            path_abundance_table, "Abundance"
         )
 
         return gene_families, path_abundance, metaphlan_profile, reactions
