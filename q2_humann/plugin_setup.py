@@ -6,7 +6,9 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 
-from qiime2.plugin import Citations, Choices, Int, Plugin, Range, Str
+from qiime2.plugin import (
+    Bool, Citations, Choices, Float, Int, Plugin, Range, Str
+)
 from q2_types.sample_data import SampleData
 from q2_types.per_sample_sequences import (
     PairedEndSequencesWithQuality,
@@ -21,11 +23,6 @@ from q2_humann.db import (
     download_translated_search_database,
 )
 from q2_humann.run import run_humann
-from q2_humann._transformers import humann_database_dirfmt_to_path
-from q2_humann._transformers import (
-    paired_end_reads_to_manifest_df,
-    single_end_reads_to_manifest_df,
-)
 from q2_humann._types_and_formats import (
     ChocoPhlAn,
     HumannDatabase,
@@ -42,14 +39,8 @@ from q2_humann._types_and_formats import (
     TranslatedSearch,
 )
 from q2_sapienns.plugin_setup import (
-    HumannGeneFamilyDirectoryFormat,
-    HumannGeneFamilyFormat,
     HumannGeneFamilyTable,
-    HumannPathAbundanceDirectoryFormat,
-    HumannPathAbundanceFormat,
     HumannPathAbundanceTable,
-    MetaphlanMergedAbundanceDirectoryFormat,
-    MetaphlanMergedAbundanceFormat,
     MetaphlanMergedAbundanceTable,
 )
 
@@ -110,10 +101,6 @@ plugin.register_semantic_type_to_format(
     HumannReactionTable,
     HumannReactionDirectoryFormat,
 )
-
-plugin.register_transformer(humann_database_dirfmt_to_path)
-plugin.register_transformer(single_end_reads_to_manifest_df)
-plugin.register_transformer(paired_end_reads_to_manifest_df)
 
 plugin.methods.register_function(
     function=download_chocophlan_database,
@@ -176,6 +163,22 @@ plugin.methods.register_function(
     },
     parameters={
         "threads": Int % Range(1, None),
+        "memory_use": Str % Choices(["minimum", "maximum"]),
+        "prescreen_threshold": Float % Range(0, None),
+        "nucleotide_identity_threshold": Float % Range(0, 100),
+        "nucleotide_query_coverage_threshold": Float % Range(0, 100),
+        "nucleotide_subject_coverage_threshold": Float % Range(0, 100),
+        "translated_identity_threshold": Float % Range(0, 100),
+        "translated_query_coverage_threshold": Float % Range(0, 100),
+        "translated_subject_coverage_threshold": Float % Range(0, 100),
+        "evalue": Float % Range(0, None),
+        "gap_fill": Bool,
+        "minpath": Bool,
+        "pathways": Str % Choices(["metacyc", "unipathway"]),
+        "output_max_decimals": Int % Range(0, None),
+        "log_level": Str % Choices(
+            ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        ),
     },
     outputs=[
         ("gene_families", HumannGeneFamilyTable),
@@ -203,6 +206,44 @@ plugin.methods.register_function(
     },
     parameter_descriptions={
         "threads": "Number of worker threads to pass to HUMANN.",
+        "memory_use": (
+            "Amount of memory HUMANN should use for intermediate "
+            "processing."
+        ),
+        "prescreen_threshold": (
+            "Minimum percentage of reads that must match a species during "
+            "MetaPhlAn prescreening."
+        ),
+        "nucleotide_identity_threshold": (
+            "Minimum identity threshold for nucleotide alignments."
+        ),
+        "nucleotide_query_coverage_threshold": (
+            "Minimum query coverage threshold for nucleotide alignments."
+        ),
+        "nucleotide_subject_coverage_threshold": (
+            "Minimum subject coverage threshold for nucleotide alignments."
+        ),
+        "translated_identity_threshold": (
+            "Minimum identity threshold for translated alignments. Leave "
+            "unset to let HUMANN choose based on the translated-search "
+            "database."
+        ),
+        "translated_query_coverage_threshold": (
+            "Minimum query coverage threshold for translated alignments."
+        ),
+        "translated_subject_coverage_threshold": (
+            "Minimum subject coverage threshold for translated alignments."
+        ),
+        "evalue": (
+            "Maximum e-value threshold for the translated search."
+        ),
+        "gap_fill": "Enable HUMANN pathway gap filling.",
+        "minpath": "Enable HUMANN MinPath pathway computation.",
+        "pathways": "Pathway database to use for pathway computations.",
+        "output_max_decimals": (
+            "Maximum number of decimal places in HUMANN output tables."
+        ),
+        "log_level": "HUMANN log level.",
     },
     output_descriptions={
         "gene_families": "Merged HUMANN gene family abundance table.",

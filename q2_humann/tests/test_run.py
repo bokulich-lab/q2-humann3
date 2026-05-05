@@ -16,7 +16,6 @@ import pandas as pd
 from qiime2.plugin.testing import TestPluginBase
 
 from q2_humann.run import (
-    _collect_metaphlan_profiles,
     _merge_metaphlan_profiles,
     _regroup_gene_families_to_reactions,
     _stage_sample_input,
@@ -32,6 +31,11 @@ from q2_sapienns.plugin_setup import (
     HumannPathAbundanceDirectoryFormat,
     MetaphlanMergedAbundanceDirectoryFormat,
 )
+
+
+class _ReadsDirFmt:
+    def __init__(self, manifest: pd.DataFrame):
+        self.manifest = manifest
 
 
 class RunHumannTests(TestPluginBase):
@@ -57,38 +61,29 @@ class RunHumannTests(TestPluginBase):
 
     def _make_reads_manifest(self) -> pd.DataFrame:
         return pd.DataFrame(
-            [
-                {
-                    "sample-id": "sample-a",
-                    "absolute_path": self._gzip_fixture(
+            {
+                "forward": {
+                    "sample-a": self._gzip_fixture(
                         "sample-a-forward.fastq"
                     ),
-                    "direction": "forward",
-                },
-                {
-                    "sample-id": "sample-a",
-                    "absolute_path": self._gzip_fixture(
-                        "sample-a-reverse.fastq"
-                    ),
-                    "direction": "reverse",
-                },
-                {
-                    "sample-id": "sample-b",
-                    "absolute_path": self._gzip_fixture(
+                    "sample-b": self._gzip_fixture(
                         "sample-b-forward.fastq"
                     ),
-                    "direction": "forward",
                 },
-            ]
+                "reverse": {
+                    "sample-a": self._gzip_fixture(
+                        "sample-a-reverse.fastq"
+                    ),
+                    "sample-b": None,
+                },
+            }
         )
 
     def _make_humann_database(
         self, database_kind: str, build: str
     ) -> HumannDatabaseDirFmt:
         database = HumannDatabaseDirFmt()
-        data_dir = database.path / "data"
-        data_dir.mkdir()
-        (data_dir / database_kind).mkdir()
+        (database.path / database_kind).mkdir()
         with (database.path / "metadata.json").open("w") as fh:
             json.dump(
                 {"database_kind": database_kind, "build": build},
@@ -98,9 +93,7 @@ class RunHumannTests(TestPluginBase):
 
     def _make_metaphlan_database(self) -> MetaphlanDatabaseDirFmt:
         database = MetaphlanDatabaseDirFmt()
-        data_dir = database.path / "data"
-        data_dir.mkdir()
-        (data_dir / "mpa_vTest.pkl").write_bytes(b"taxonomy")
+        (database.path / "mpa_vTest.pkl").write_bytes(b"taxonomy")
         with (database.path / "metadata.json").open("w") as fh:
             json.dump(
                 {"database_kind": "metaphlan", "index": "mpa_vTest"},
@@ -122,29 +115,28 @@ class RunHumannTests(TestPluginBase):
             )
         )
 
-    def test_stage_sample_input_copies_single_end_reads(self):
+    def test_stage_sample_input_reuses_single_end_reads(self):
         manifest = self._make_reads_manifest()
-        sample_manifest = manifest.loc[manifest["sample-id"] == "sample-b"]
+        sample_manifest = manifest.loc["sample-b"]
 
         with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+            sample_work_dir = tmpdir / "sample-b"
             observed = _stage_sample_input(
-                sample_manifest, "sample-b", Path(tmpdir)
+                sample_manifest, "sample-b", sample_work_dir
             )
 
-            self.assertEqual(observed.name, "sample-b.fastq.gz")
-            with open(self.get_data_path("sample-b-forward.fastq")) as fh:
-                expected = fh.read()
-            self.assertEqual(
-                gzip.decompress(observed.read_bytes()).decode(), expected
-            )
+            self.assertEqual(observed, Path(sample_manifest["forward"]))
+            self.assertFalse(sample_work_dir.exists())
 
     def test_stage_sample_input_concatenates_paired_end_reads(self):
         manifest = self._make_reads_manifest()
-        sample_manifest = manifest.loc[manifest["sample-id"] == "sample-a"]
+        sample_manifest = manifest.loc["sample-a"]
 
         with tempfile.TemporaryDirectory() as tmpdir:
+            sample_work_dir = Path(tmpdir) / "sample-a"
             observed = _stage_sample_input(
-                sample_manifest, "sample-a", Path(tmpdir)
+                sample_manifest, "sample-a", sample_work_dir
             )
 
             expected = (
@@ -153,24 +145,23 @@ class RunHumannTests(TestPluginBase):
                     self.get_data_path("sample-a-reverse.fastq")
                 ).read_text()
             )
+            self.assertEqual(observed, sample_work_dir / "sample-a.fastq.gz")
+            self.assertTrue(sample_work_dir.is_dir())
             self.assertEqual(
                 gzip.decompress(observed.read_bytes()).decode(), expected
             )
 
     def test_stage_sample_input_fails_when_sample_has_no_reads(self):
-        manifest = pd.DataFrame(
-            columns=["sample-id", "absolute_path", "direction"]
-        )
+        manifest = pd.Series({"forward": None, "reverse": None})
 
         with tempfile.TemporaryDirectory() as tmpdir:
             with self.assertRaisesRegex(RuntimeError, "No reads found"):
                 _stage_sample_input(manifest, "sample-c", Path(tmpdir))
 
-    def test_collect_metaphlan_profiles(self):
+    def test_merge_metaphlan_profiles(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
             run_output_dir = tmpdir / "humann-output"
-            destination_dir = tmpdir / "profile-input"
             self._write_metaphlan_profile(
                 run_output_dir
                 / "sample-a_humann_temp"
@@ -179,73 +170,57 @@ class RunHumannTests(TestPluginBase):
                 "2",
                 "42.0",
             )
-
-            _collect_metaphlan_profiles(run_output_dir, destination_dir)
-
-            self.assertTrue(
-                (
-                    destination_dir
-                    / "sample-a_metaphlan_bugs_list.tsv"
-                ).exists()
-            )
-
-    def test_collect_metaphlan_profiles_fails_when_missing(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with self.assertRaisesRegex(
-                RuntimeError, "did not produce any MetaPhlAn"
-            ):
-                _collect_metaphlan_profiles(
-                    Path(tmpdir) / "humann-output",
-                    Path(tmpdir) / "profile-input",
-                )
-
-    def test_merge_metaphlan_profiles(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmpdir = Path(tmpdir)
-            profile_dir = tmpdir / "profiles"
-            profile_dir.mkdir()
             self._write_metaphlan_profile(
-                profile_dir / "sample-a_metaphlan_bugs_list.tsv",
-                "k__Bacteria",
-                "2",
-                "42.0",
-            )
-            self._write_metaphlan_profile(
-                profile_dir / "sample-b_metaphlan_bugs_list.tsv",
+                run_output_dir
+                / "sample-b_humann_temp"
+                / "sample-b_metaphlan_bugs_list.tsv",
                 "k__Archaea",
                 "2157",
                 "7.5",
             )
             output_path = tmpdir / "merged.tsv"
 
-            _merge_metaphlan_profiles(profile_dir, output_path)
+            def _mock_run_command(cmd):
+                Path(cmd[cmd.index("-o") + 1]).write_text(
+                    "#mpa_vTest_CHOCOPhlAn_202401\n"
+                    "clade_name\tNCBI_tax_id\tsample-a\tsample-b\n"
+                )
 
-            self.assertEqual(
-                output_path.read_text(),
-                "\n".join(
-                    [
-                        "clade_name\tNCBI_tax_id\tsample-a\tsample-b",
-                        "k__Bacteria\t2\t42.0\t0.0",
-                        "k__Archaea\t2157\t0.0\t7.5",
-                        "",
-                    ]
-                ),
+            with patch(
+                "q2_humann.run.run_humann_command",
+                side_effect=_mock_run_command,
+            ) as run_command:
+                _merge_metaphlan_profiles(run_output_dir, output_path)
+
+            run_command.assert_called_once_with(
+                [
+                    "merge_metaphlan_tables.py",
+                    str(
+                        run_output_dir
+                        / "sample-a_humann_temp"
+                        / "sample-a_metaphlan_bugs_list.tsv"
+                    ),
+                    str(
+                        run_output_dir
+                        / "sample-b_humann_temp"
+                        / "sample-b_metaphlan_bugs_list.tsv"
+                    ),
+                    "-o",
+                    str(output_path),
+                ]
             )
 
-    def test_merge_metaphlan_profiles_fails_on_bad_row(self):
+    def test_merge_metaphlan_profiles_fails_when_missing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
-            profile_dir = tmpdir / "profiles"
-            profile_dir.mkdir()
-            (profile_dir / "sample-a_metaphlan_bugs_list.tsv").write_text(
-                "k__Bacteria\t2\n"
-            )
+            run_output_dir = tmpdir / "humann-output"
+            run_output_dir.mkdir()
 
             with self.assertRaisesRegex(
-                RuntimeError, "fewer than three columns"
+                RuntimeError, "No MetaPhlAn bugs-list files"
             ):
                 _merge_metaphlan_profiles(
-                    profile_dir, tmpdir / "merged.tsv"
+                    run_output_dir, tmpdir / "merged.tsv"
                 )
 
     def test_regroup_gene_families_to_reactions_uses_uniref50_groups(self):
@@ -292,7 +267,7 @@ class RunHumannTests(TestPluginBase):
                 )
 
     def test_run_humann(self):
-        reads = self._make_reads_manifest()
+        reads = _ReadsDirFmt(self._make_reads_manifest())
         nucleotide_database = self._make_humann_database(
             "chocophlan", "full"
         )
@@ -312,6 +287,12 @@ class RunHumannTests(TestPluginBase):
                     "k__Bacteria",
                     "2",
                     "42.0",
+                )
+            elif cmd[0] == "merge_metaphlan_tables.py":
+                output_path = Path(cmd[cmd.index("-o") + 1])
+                output_path.write_text(
+                    "clade_name\tNCBI_tax_id\tsample-a\tsample-b\n"
+                    "k__Bacteria\t2\t42.0\t42.0\n"
                 )
             elif cmd[0] == "humann_join_tables":
                 output_path = Path(cmd[cmd.index("--output") + 1])
@@ -337,6 +318,20 @@ class RunHumannTests(TestPluginBase):
                 translated_search_database,
                 metaphlan_database,
                 threads=3,
+                memory_use="maximum",
+                prescreen_threshold=0.02,
+                nucleotide_identity_threshold=95.0,
+                nucleotide_query_coverage_threshold=91.0,
+                nucleotide_subject_coverage_threshold=51.0,
+                translated_identity_threshold=80.0,
+                translated_query_coverage_threshold=92.0,
+                translated_subject_coverage_threshold=52.0,
+                evalue=0.001,
+                gap_fill=False,
+                minpath=False,
+                pathways="unipathway",
+                output_max_decimals=5,
+                log_level="INFO",
             )
 
         gene_families, path_abundance, metaphlan_profile, reactions = observed
@@ -354,7 +349,7 @@ class RunHumannTests(TestPluginBase):
         self.assertTrue((path_abundance.path / "table.tsv").exists())
         self.assertTrue((metaphlan_profile.path / "table.tsv").exists())
         self.assertTrue((reactions.path / "table.tsv").exists())
-        self.assertEqual(run_command.call_count, 5)
+        self.assertEqual(run_command.call_count, 6)
         first_humann_cmd = run_command.call_args_list[0].args[0]
         self.assertEqual(first_humann_cmd[0], "humann")
         self.assertEqual(
@@ -364,10 +359,41 @@ class RunHumannTests(TestPluginBase):
             "sample-a",
         )
         self.assertIn(
-            f"--bowtie2db {metaphlan_database.path / 'data'} -x mpa_vTest",
+            f"--bowtie2db {metaphlan_database.path} -x mpa_vTest",
             first_humann_cmd,
         )
-        regroup_cmd = run_command.call_args_list[4].args[0]
+        expected_options = {
+            "--memory-use": "maximum",
+            "--prescreen-threshold": "0.02",
+            "--nucleotide-identity-threshold": "95.0",
+            "--nucleotide-query-coverage-threshold": "91.0",
+            "--nucleotide-subject-coverage-threshold": "51.0",
+            "--translated-identity-threshold": "80.0",
+            "--translated-query-coverage-threshold": "92.0",
+            "--translated-subject-coverage-threshold": "52.0",
+            "--evalue": "0.001",
+            "--gap-fill": "off",
+            "--minpath": "off",
+            "--pathways": "unipathway",
+            "--output-max-decimals": "5",
+            "--log-level": "INFO",
+        }
+        for option, value in expected_options.items():
+            self.assertEqual(
+                first_humann_cmd[first_humann_cmd.index(option) + 1],
+                value,
+            )
+        merge_cmd = run_command.call_args_list[4].args[0]
+        self.assertEqual(merge_cmd[0], "merge_metaphlan_tables.py")
+        self.assertEqual(merge_cmd[-2], "-o")
+        self.assertEqual(Path(merge_cmd[-1]).name, "table.tsv")
+        self.assertTrue(
+            merge_cmd[1].endswith("sample-a_metaphlan_bugs_list.tsv")
+        )
+        self.assertTrue(
+            merge_cmd[2].endswith("sample-b_metaphlan_bugs_list.tsv")
+        )
+        regroup_cmd = run_command.call_args_list[5].args[0]
         self.assertEqual(regroup_cmd[0], "humann_regroup_table")
         self.assertEqual(
             regroup_cmd[regroup_cmd.index("--groups") + 1],

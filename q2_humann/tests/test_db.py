@@ -46,7 +46,9 @@ class DownloadDatabaseTests(TestPluginBase):
             )
             self.assertEqual(cmd[5:], ["--update-config", "no"])
             install_dir = Path(cmd[4])
-            (install_dir / f"{expected_build}.1").write_bytes(b"db-data")
+            database_dir = install_dir / expected_database
+            database_dir.mkdir()
+            (database_dir / f"{expected_build}.1").write_bytes(b"db-data")
             return subprocess.CompletedProcess(cmd, 0, "", "")
 
         return _runner
@@ -94,11 +96,18 @@ class DownloadDatabaseTests(TestPluginBase):
         with patch(
             "q2_humann.db.run_humann_command",
             side_effect=self._mock_humann_download("chocophlan", "full"),
-        ):
+        ) as run_command:
             observed = download_chocophlan_database()
 
         self.assertIsInstance(observed, HumannDatabaseDirFmt)
-        self.assertTrue((observed.path / "data" / "full.1").exists())
+        observed_cmd = run_command.call_args.args[0]
+        self.assertEqual(
+            Path(observed_cmd[observed_cmd.index("full") + 1]),
+            observed.path,
+        )
+        self.assertTrue(
+            (observed.path / "chocophlan" / "full.1").exists()
+        )
         with open(observed.path / "metadata.json") as fh:
             metadata = json.load(fh)
         self.assertEqual(
@@ -111,11 +120,18 @@ class DownloadDatabaseTests(TestPluginBase):
         with patch(
             "q2_humann.db.run_humann_command",
             side_effect=self._mock_humann_download("uniref", build),
-        ):
+        ) as run_command:
             observed = download_translated_search_database(build=build)
 
         self.assertIsInstance(observed, HumannDatabaseDirFmt)
-        self.assertTrue((observed.path / "data" / f"{build}.1").exists())
+        observed_cmd = run_command.call_args.args[0]
+        self.assertEqual(
+            Path(observed_cmd[observed_cmd.index(build) + 1]),
+            observed.path,
+        )
+        self.assertTrue(
+            (observed.path / "uniref" / f"{build}.1").exists()
+        )
         with open(observed.path / "metadata.json") as fh:
             metadata = json.load(fh)
         self.assertEqual(
@@ -153,14 +169,18 @@ class DownloadDatabaseTests(TestPluginBase):
                 expected_cpus=4,
                 resolved_index="mpa_vJan21_CHOCOPhlAnSGB_202103",
             ),
-        ):
+        ) as run_command:
             observed = download_metaphlan_database(cpus=4)
 
         self.assertIsInstance(observed, MetaphlanDatabaseDirFmt)
+        observed_cmd = run_command.call_args.args[0]
+        self.assertEqual(
+            Path(observed_cmd[observed_cmd.index("--bowtie2db") + 1]),
+            observed.path,
+        )
         self.assertTrue(
             (
                 observed.path
-                / "data"
                 / "mpa_vJan21_CHOCOPhlAnSGB_202103.pkl"
             ).exists()
         )

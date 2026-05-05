@@ -6,8 +6,6 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 
-from pathlib import Path
-
 import json
 
 from qiime2.plugin import SemanticType, ValidationError, model
@@ -60,12 +58,12 @@ class HumannDatabaseDirFmt(model.DirectoryFormat):
         "metadata.json", format=HumannDatabaseMetadataFormat
     )
     payload = model.FileCollection(
-        r"data/.+", format=HumannDatabaseFileFormat
+        r"(?!metadata\.json$).+", format=HumannDatabaseFileFormat
     )
 
     @payload.set_path_maker
     def payload_path_maker(self, relative_path: str):
-        return str(Path("data") / relative_path)
+        return relative_path
 
 
 class MetaphlanDatabaseMetadataFormat(model.TextFileFormat):
@@ -102,12 +100,12 @@ class MetaphlanDatabaseDirFmt(model.DirectoryFormat):
         "metadata.json", format=MetaphlanDatabaseMetadataFormat
     )
     payload = model.FileCollection(
-        r"data/.+", format=MetaphlanDatabaseFileFormat
+        r"(?!metadata\.json$).+", format=MetaphlanDatabaseFileFormat
     )
 
     @payload.set_path_maker
     def payload_path_maker(self, relative_path: str):
-        return str(Path("data") / relative_path)
+        return relative_path
 
 
 class HumannReactionFormat(HumannTableFormat):

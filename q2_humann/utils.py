@@ -1,13 +1,11 @@
 # ----------------------------------------------------------------------------
-# Copyright (c) 2024, Michal Ziemski.
+# Copyright (c) 2026, Bokulich Lab.
 #
 # Distributed under the terms of the Modified BSD License.
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 
-from pathlib import Path
-import shutil
 import subprocess
 
 
@@ -53,12 +51,3 @@ def run_humann_command(cmd: list[str]) -> None:
         raise RuntimeError(
             f"Command failed with exit code {exc.returncode}: {detail}"
         ) from exc
-
-
-def copy_directory_contents(source_dir: Path, target_dir: Path) -> None:
-    for path in source_dir.iterdir():
-        destination = target_dir / path.name
-        if path.is_dir():
-            shutil.copytree(path, destination)
-        else:
-            shutil.copy2(path, destination)

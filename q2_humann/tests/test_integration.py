@@ -24,6 +24,11 @@ from q2_humann._types_and_formats import (
 )
 
 
+class _ReadsDirFmt:
+    def __init__(self, manifest: pd.DataFrame):
+        self.manifest = manifest
+
+
 class RunHumannIntegrationTests(TestPluginBase):
     package = "q2_humann.tests"
 
@@ -47,15 +52,18 @@ class RunHumannIntegrationTests(TestPluginBase):
 
     def _make_reads_manifest_for_fixture(
         self, sample_id: str, fixture_name: str
-    ) -> pd.DataFrame:
-        return pd.DataFrame(
-            [
+    ) -> _ReadsDirFmt:
+        return _ReadsDirFmt(
+            pd.DataFrame(
                 {
-                    "sample-id": sample_id,
-                    "absolute_path": self._gzip_fixture(fixture_name),
-                    "direction": "forward",
+                    "forward": {
+                        sample_id: self._gzip_fixture(fixture_name),
+                    },
+                    "reverse": {
+                        sample_id: None,
+                    },
                 }
-            ]
+            )
         )
 
     def _make_humann_demo_database(
@@ -77,9 +85,7 @@ class RunHumannIntegrationTests(TestPluginBase):
             self.skipTest(f"HUMANN demo database is missing: {source_dir}")
 
         database = HumannDatabaseDirFmt()
-        data_dir = database.path / "data"
-        data_dir.mkdir()
-        shutil.copytree(source_dir, data_dir / payload_dir)
+        shutil.copytree(source_dir, database.path / payload_dir)
         with (database.path / "metadata.json").open("w") as fh:
             json.dump(
                 {"database_kind": database_kind, "build": build},
@@ -89,9 +95,7 @@ class RunHumannIntegrationTests(TestPluginBase):
 
     def _make_toy_metaphlan_database(self) -> MetaphlanDatabaseDirFmt:
         database = MetaphlanDatabaseDirFmt()
-        data_dir = database.path / "data"
-        data_dir.mkdir()
-        (data_dir / "mpa_vTest.pkl").write_bytes(b"taxonomy")
+        (database.path / "mpa_vTest.pkl").write_bytes(b"taxonomy")
         with (database.path / "metadata.json").open("w") as fh:
             json.dump(
                 {"database_kind": "metaphlan", "index": "mpa_vTest"},
@@ -110,8 +114,9 @@ if "--version" in sys.argv:
     print("MetaPhlAn version 3.0.0")
     raise SystemExit(0)
 
-profile = \"\"\"#v30_CHOCOPhlAn_201901
-#SampleID\tMetaphlan2_Analysis
+profile = \"\"\"#mpa_v30_CHOCOPhlAn_201901
+#mpa_v30_CHOCOPhlAn_201901
+#SampleID\tMetaphlan_Analysis
 #clade_name\tNCBI_tax_id\trelative_abundance
 k__Bacteria\t2\t100.0
 g__Bacteroides|s__Bacteroides_dorei\t357276\t100.0
