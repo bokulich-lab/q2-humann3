@@ -7,10 +7,11 @@
 # ----------------------------------------------------------------------------
 
 from qiime2.plugin import (
-    Bool, Citations, Choices, Float, Int, Plugin, Range, Str
+    Bool, Citations, Choices, Float, Int, List, Plugin, Range, Str
 )
 from q2_types.sample_data import SampleData
 from q2_types.per_sample_sequences import (
+    JoinedSequencesWithQuality,
     PairedEndSequencesWithQuality,
     SequencesWithQuality,
 )
@@ -22,7 +23,14 @@ from q2_humann.db import (
     download_metaphlan_database,
     download_translated_search_database,
 )
-from q2_humann.run import run_humann
+from q2_humann.run import (
+    collate_gene_families,
+    collate_metaphlan_profiles,
+    collate_path_abundance,
+    collate_reactions,
+    run_humann,
+    _run_humann,
+)
 from q2_humann._types_and_formats import (
     ChocoPhlAn,
     HumannDatabase,
@@ -178,7 +186,7 @@ plugin.methods.register_function(
 )
 
 plugin.methods.register_function(
-    function=run_humann,
+    function=_run_humann,
     inputs={
         "reads": SampleData[
             SequencesWithQuality | PairedEndSequencesWithQuality
@@ -286,6 +294,196 @@ plugin.methods.register_function(
         "and MetaPhlAn profile tables across samples and derive a reactions "
         "table from the merged gene families, using staged HUMANN and "
         "MetaPhlAn database artifacts."
+    ),
+    citations=[citations["Beghini-etal-2021"]],
+)
+
+plugin.methods.register_function(
+    function=collate_gene_families,
+    inputs={"tables": List[HumannGeneFamilyTable]},
+    parameters={},
+    outputs={"collated_table": HumannGeneFamilyTable},
+    input_descriptions={
+        "tables": "HUMANN gene-family tables to collate."
+    },
+    parameter_descriptions={},
+    output_descriptions={
+        "collated_table": "The collated HUMANN gene-family table."
+    },
+    name="Collate HUMANN gene-family tables",
+    description=(
+        "Collate multiple HUMANN gene-family tables into one table."
+    ),
+    citations=[citations["Beghini-etal-2021"]],
+)
+
+plugin.methods.register_function(
+    function=collate_path_abundance,
+    inputs={"tables": List[HumannPathAbundanceTable]},
+    parameters={},
+    outputs={"collated_table": HumannPathAbundanceTable},
+    input_descriptions={
+        "tables": "HUMANN pathway-abundance tables to collate."
+    },
+    parameter_descriptions={},
+    output_descriptions={
+        "collated_table": "The collated HUMANN pathway-abundance table."
+    },
+    name="Collate HUMANN pathway-abundance tables",
+    description=(
+        "Collate multiple HUMANN pathway-abundance tables into one table."
+    ),
+    citations=[citations["Beghini-etal-2021"]],
+)
+
+plugin.methods.register_function(
+    function=collate_metaphlan_profiles,
+    inputs={"tables": List[MetaphlanMergedAbundanceTable]},
+    parameters={},
+    outputs={"collated_table": MetaphlanMergedAbundanceTable},
+    input_descriptions={
+        "tables": "Merged MetaPhlAn profile tables to collate."
+    },
+    parameter_descriptions={},
+    output_descriptions={
+        "collated_table": "The collated MetaPhlAn profile table."
+    },
+    name="Collate MetaPhlAn profile tables",
+    description=(
+        "Collate multiple merged MetaPhlAn profile tables into one table."
+    ),
+    citations=[citations["Beghini-etal-2021"]],
+)
+
+plugin.methods.register_function(
+    function=collate_reactions,
+    inputs={"tables": List[HumannReactionTable]},
+    parameters={},
+    outputs={"collated_table": HumannReactionTable},
+    input_descriptions={
+        "tables": "HUMANN reaction tables to collate."
+    },
+    parameter_descriptions={},
+    output_descriptions={
+        "collated_table": "The collated HUMANN reaction table."
+    },
+    name="Collate HUMANN reaction tables",
+    description="Collate multiple HUMANN reaction tables into one table.",
+    citations=[citations["Beghini-etal-2021"]],
+)
+
+plugin.pipelines.register_function(
+    function=run_humann,
+    inputs={
+        "reads": SampleData[
+            SequencesWithQuality
+            | JoinedSequencesWithQuality
+            | PairedEndSequencesWithQuality
+        ],
+        "nucleotide_database": HumannDatabase[ChocoPhlAn],
+        "translated_search_database": HumannDatabase[TranslatedSearch],
+        "metaphlan_database": MetaphlanDatabase,
+    },
+    parameters={
+        "threads": Int % Range(1, None),
+        "memory_use": Str % Choices(["minimum", "maximum"]),
+        "prescreen_threshold": Float % Range(0, None),
+        "nucleotide_identity_threshold": Float % Range(0, 100),
+        "nucleotide_query_coverage_threshold": Float % Range(0, 100),
+        "nucleotide_subject_coverage_threshold": Float % Range(0, 100),
+        "translated_identity_threshold": Float % Range(0, 100),
+        "translated_query_coverage_threshold": Float % Range(0, 100),
+        "translated_subject_coverage_threshold": Float % Range(0, 100),
+        "evalue": Float % Range(0, None),
+        "gap_fill": Bool,
+        "minpath": Bool,
+        "pathways": Str % Choices(["metacyc", "unipathway"]),
+        "output_max_decimals": Int % Range(0, None),
+        "log_level": Str % Choices(
+            ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        ),
+        "num_partitions": Int % Range(1, None),
+    },
+    outputs=[
+        ("gene_families", HumannGeneFamilyTable),
+        ("path_abundance", HumannPathAbundanceTable),
+        ("metaphlan_profile", MetaphlanMergedAbundanceTable),
+        ("reactions", HumannReactionTable),
+    ],
+    input_descriptions={
+        "reads": (
+            "Single-end, joined, or paired-end demultiplexed reads to "
+            "profile with HUMANN."
+        ),
+        "nucleotide_database": (
+            "The staged ChocoPhlAn database artifact to use for nucleotide "
+            "search."
+        ),
+        "translated_search_database": (
+            "The staged translated-search database artifact to use for "
+            "protein search."
+        ),
+        "metaphlan_database": (
+            "The staged MetaPhlAn database artifact to use during taxonomic "
+            "prescreening."
+        ),
+    },
+    parameter_descriptions={
+        "threads": "Number of worker threads to pass to HUMANN.",
+        "memory_use": (
+            "Amount of memory HUMANN should use for intermediate "
+            "processing."
+        ),
+        "prescreen_threshold": (
+            "Minimum percentage of reads that must match a species during "
+            "MetaPhlAn prescreening."
+        ),
+        "nucleotide_identity_threshold": (
+            "Minimum identity threshold for nucleotide alignments."
+        ),
+        "nucleotide_query_coverage_threshold": (
+            "Minimum query coverage threshold for nucleotide alignments."
+        ),
+        "nucleotide_subject_coverage_threshold": (
+            "Minimum subject coverage threshold for nucleotide alignments."
+        ),
+        "translated_identity_threshold": (
+            "Minimum identity threshold for translated alignments. Leave "
+            "unset to let HUMANN choose based on the translated-search "
+            "database."
+        ),
+        "translated_query_coverage_threshold": (
+            "Minimum query coverage threshold for translated alignments."
+        ),
+        "translated_subject_coverage_threshold": (
+            "Minimum subject coverage threshold for translated alignments."
+        ),
+        "evalue": "Maximum e-value threshold for the translated search.",
+        "gap_fill": "Enable HUMANN pathway gap filling.",
+        "minpath": "Enable HUMANN MinPath pathway computation.",
+        "pathways": "Pathway database to use for pathway computations.",
+        "output_max_decimals": (
+            "Maximum number of decimal places in HUMANN output tables."
+        ),
+        "log_level": "HUMANN log level.",
+        "num_partitions": (
+            "Number of read partitions to process before merging outputs."
+        ),
+    },
+    output_descriptions={
+        "gene_families": "Merged HUMANN gene family abundance table.",
+        "path_abundance": "Merged HUMANN pathway abundance table.",
+        "metaphlan_profile": "Merged MetaPhlAn taxonomic profile table.",
+        "reactions": (
+            "Reaction table derived from merged HUMANN gene families."
+        ),
+    },
+    name="Run HUMANN",
+    description=(
+        "Partition a single-end, joined, or paired-end read artifact, run "
+        "HUMANN on each partition, then merge the resulting gene family, "
+        "pathway abundance, and MetaPhlAn profile tables across partitions "
+        "and derive a reactions table from the merged gene families."
     ),
     citations=[citations["Beghini-etal-2021"]],
 )

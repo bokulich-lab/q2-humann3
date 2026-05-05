@@ -7,6 +7,7 @@
 # ----------------------------------------------------------------------------
 
 import json
+from io import StringIO
 from pathlib import Path
 import shutil
 import tempfile
@@ -14,10 +15,15 @@ import tempfile
 import pandas as pd
 from q2_types.per_sample_sequences import (
     CasavaOneEightSingleLanePerSampleDirFmt,
+    JoinedSequencesWithQuality,
+    PairedEndSequencesWithQuality,
+    SequencesWithQuality,
 )
+from q2_types.sample_data import SampleData
 
 from q2_humann._types_and_formats import (
     HumannDatabaseDirFmt,
+    HumannReactionTable,
     HumannReactionDirectoryFormat,
     MetaphlanDatabaseDirFmt,
 )
@@ -136,7 +142,76 @@ def _regroup_gene_families_to_reactions(
     run_humann_command(cmd)
 
 
-def run_humann(
+def _read_table(path: Path) -> pd.DataFrame:
+    """Read a HUMANN-style TSV table."""
+    lines = path.read_text().splitlines()
+    while lines and lines[0].startswith("#mpa_"):
+        lines.pop(0)
+    if not lines:
+        raise RuntimeError(f"Table {path} is empty.")
+
+    return pd.read_csv(StringIO("\n".join(lines)), sep="\t")
+
+
+def _merge_table_dirfmts(
+    tables: list,
+    output_dirfmt,
+    key_columns: list[str] = None,
+):
+    """Merge table directory formats into one output directory format."""
+    if not tables:
+        raise RuntimeError("No table artifacts were available to collate.")
+
+    merged = None
+    for table_dirfmt in tables:
+        table_path = table_dirfmt.path / "table.tsv"
+        table = _read_table(table_path)
+        if key_columns is None:
+            key_columns = [table.columns[0]]
+
+        if merged is None:
+            merged = table
+        else:
+            merged = merged.merge(table, on=key_columns, how="outer")
+
+    output = output_dirfmt()
+    merged.fillna(0).to_csv(output.path / "table.tsv", sep="\t", index=False)
+    return output
+
+
+def collate_gene_families(
+    tables: HumannGeneFamilyDirectoryFormat,
+) -> HumannGeneFamilyDirectoryFormat:
+    """Collate HUMANN gene-family tables across partitions."""
+    return _merge_table_dirfmts(tables, HumannGeneFamilyDirectoryFormat)
+
+
+def collate_path_abundance(
+    tables: HumannPathAbundanceDirectoryFormat,
+) -> HumannPathAbundanceDirectoryFormat:
+    """Collate HUMANN pathway-abundance tables across partitions."""
+    return _merge_table_dirfmts(tables, HumannPathAbundanceDirectoryFormat)
+
+
+def collate_metaphlan_profiles(
+    tables: MetaphlanMergedAbundanceDirectoryFormat,
+) -> MetaphlanMergedAbundanceDirectoryFormat:
+    """Collate merged MetaPhlAn profile tables across partitions."""
+    return _merge_table_dirfmts(
+        tables,
+        MetaphlanMergedAbundanceDirectoryFormat,
+        key_columns=["clade_name", "NCBI_tax_id"],
+    )
+
+
+def collate_reactions(
+    tables: HumannReactionDirectoryFormat,
+) -> HumannReactionDirectoryFormat:
+    """Collate HUMANN reaction tables across partitions."""
+    return _merge_table_dirfmts(tables, HumannReactionDirectoryFormat)
+
+
+def _run_humann(
     reads: CasavaOneEightSingleLanePerSampleDirFmt,
     nucleotide_database: HumannDatabaseDirFmt,
     translated_search_database: HumannDatabaseDirFmt,
@@ -262,3 +337,84 @@ def run_humann(
         )
 
         return gene_families, path_abundance, metaphlan_profile, reactions
+
+
+def run_humann(
+    ctx,
+    reads,
+    nucleotide_database,
+    translated_search_database,
+    metaphlan_database,
+    threads=1,
+    memory_use="minimum",
+    prescreen_threshold=0.01,
+    nucleotide_identity_threshold=0.0,
+    nucleotide_query_coverage_threshold=90.0,
+    nucleotide_subject_coverage_threshold=50.0,
+    translated_identity_threshold=None,
+    translated_query_coverage_threshold=90.0,
+    translated_subject_coverage_threshold=50.0,
+    evalue=1.0,
+    gap_fill=True,
+    minpath=True,
+    pathways="metacyc",
+    output_max_decimals=10,
+    log_level="DEBUG",
+    num_partitions=1,
+):
+    kwargs = {
+        k: v
+        for k, v in locals().items()
+        if k not in ["ctx", "reads", "num_partitions"]
+    }
+
+    if reads.type <= SampleData[
+        SequencesWithQuality | JoinedSequencesWithQuality
+    ]:
+        _partition_reads = ctx.get_action("types", "partition_samples_single")
+    elif reads.type <= SampleData[PairedEndSequencesWithQuality]:
+        _partition_reads = ctx.get_action("types", "partition_samples_paired")
+    else:
+        raise NotImplementedError()
+
+    _humann = ctx.get_action("humann", "_run_humann")
+    _collate_gene_families = ctx.get_action(
+        "humann", "collate_gene_families"
+    )
+    _collate_path_abundance = ctx.get_action(
+        "humann", "collate_path_abundance"
+    )
+    _collate_metaphlan_profiles = ctx.get_action(
+        "humann", "collate_metaphlan_profiles"
+    )
+
+    (partitioned_reads,) = _partition_reads(reads, num_partitions)
+
+    genes_all, path_all, metaphlan_all = [], [], []
+    for _reads in partitioned_reads.values():
+        (gene_families, path_abundance, metaphlan_profile, reactions) = _humann(
+            reads=_reads, **kwargs
+        )
+        genes_all.append(gene_families)
+        path_all.append(path_abundance)
+        metaphlan_all.append(metaphlan_profile)
+
+    (gene_families,) = _collate_gene_families(genes_all)
+    (path_abundance,) = _collate_path_abundance(path_all)
+    (metaphlan_profile,) = _collate_metaphlan_profiles(metaphlan_all)
+
+    reactions = HumannReactionDirectoryFormat()
+    _regroup_gene_families_to_reactions(
+        gene_families.view(
+            HumannGeneFamilyDirectoryFormat
+        ).path / "table.tsv",
+        translated_search_database.view(HumannDatabaseDirFmt),
+        reactions.path / "table.tsv",
+    )
+
+    return (
+        gene_families,
+        path_abundance,
+        metaphlan_profile,
+        ctx.make_artifact(HumannReactionTable, reactions),
+    )

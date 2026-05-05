@@ -13,12 +13,18 @@ import tempfile
 from unittest.mock import patch
 
 import pandas as pd
+from q2_types.per_sample_sequences import SequencesWithQuality
+from q2_types.sample_data import SampleData
 from qiime2.plugin.testing import TestPluginBase
 
 from q2_humann.run import (
     _merge_metaphlan_profiles,
     _regroup_gene_families_to_reactions,
+    _run_humann,
     _stage_sample_input,
+    collate_gene_families,
+    collate_metaphlan_profiles,
+    collate_path_abundance,
     run_humann,
 )
 from q2_humann._types_and_formats import (
@@ -36,6 +42,90 @@ from q2_sapienns.plugin_setup import (
 class _ReadsDirFmt:
     def __init__(self, manifest: pd.DataFrame):
         self.manifest = manifest
+
+
+class _Artifact:
+    def __init__(self, directory_format):
+        self.directory_format = directory_format
+
+    def view(self, directory_format):
+        assert isinstance(self.directory_format, directory_format)
+        return self.directory_format
+
+
+class _ReadsArtifact:
+    type = SampleData[SequencesWithQuality]
+
+
+class _Context:
+    def __init__(self, partition_outputs):
+        self.partition_outputs = partition_outputs
+        self.created_artifacts = []
+
+    def get_action(self, plugin_name, action_name):
+        if (plugin_name, action_name) == (
+            "types",
+            "partition_samples_single",
+        ):
+            return self._partition_samples
+        if (plugin_name, action_name) == ("humann", "_run_humann"):
+            return self._run_partition
+        if (plugin_name, action_name) == (
+            "humann",
+            "collate_gene_families",
+        ):
+            return self._collate_gene_families
+        if (plugin_name, action_name) == (
+            "humann",
+            "collate_path_abundance",
+        ):
+            return self._collate_path_abundance
+        if (plugin_name, action_name) == (
+            "humann",
+            "collate_metaphlan_profiles",
+        ):
+            return self._collate_metaphlan_profiles
+        raise AssertionError(f"Unexpected action: {plugin_name}.{action_name}")
+
+    def make_artifact(self, semantic_type, directory_format):
+        artifact = _Artifact(directory_format)
+        self.created_artifacts.append((semantic_type, directory_format))
+        return artifact
+
+    def _partition_samples(self, reads, num_partitions):
+        return (
+            {
+                f"partition-{idx}": object()
+                for idx in range(num_partitions)
+            },
+        )
+
+    def _run_partition(self, reads, **kwargs):
+        return self.partition_outputs.pop(0)
+
+    def _collate_gene_families(self, tables):
+        return (
+            _Artifact(collate_gene_families(
+                [table.view(HumannGeneFamilyDirectoryFormat)
+                 for table in tables]
+            )),
+        )
+
+    def _collate_path_abundance(self, tables):
+        return (
+            _Artifact(collate_path_abundance(
+                [table.view(HumannPathAbundanceDirectoryFormat)
+                 for table in tables]
+            )),
+        )
+
+    def _collate_metaphlan_profiles(self, tables):
+        return (
+            _Artifact(collate_metaphlan_profiles(
+                [table.view(MetaphlanMergedAbundanceDirectoryFormat)
+                 for table in tables]
+            )),
+        )
 
 
 class RunHumannTests(TestPluginBase):
@@ -115,6 +205,11 @@ class RunHumannTests(TestPluginBase):
             )
         )
 
+    def _make_table_artifact(self, directory_format, text: str) -> _Artifact:
+        artifact_dirfmt = directory_format()
+        (artifact_dirfmt.path / "table.tsv").write_text(text)
+        return _Artifact(artifact_dirfmt)
+
     def test_stage_sample_input_reuses_single_end_reads(self):
         manifest = self._make_reads_manifest()
         sample_manifest = manifest.loc["sample-b"]
@@ -157,6 +252,147 @@ class RunHumannTests(TestPluginBase):
         with tempfile.TemporaryDirectory() as tmpdir:
             with self.assertRaisesRegex(RuntimeError, "No reads found"):
                 _stage_sample_input(manifest, "sample-c", Path(tmpdir))
+
+    def test_collate_gene_families(self):
+        first = HumannGeneFamilyDirectoryFormat()
+        second = HumannGeneFamilyDirectoryFormat()
+        (first.path / "table.tsv").write_text(
+            "# Gene Family\tsample-a\nUniRef90_A\t1.0\n"
+        )
+        (second.path / "table.tsv").write_text(
+            "# Gene Family\tsample-b\nUniRef90_B\t2.0\n"
+        )
+
+        observed = collate_gene_families([first, second])
+
+        self.assertEqual(
+            (observed.path / "table.tsv").read_text(),
+            "\n".join(
+                [
+                    "# Gene Family\tsample-a\tsample-b",
+                    "UniRef90_A\t1.0\t0.0",
+                    "UniRef90_B\t0.0\t2.0",
+                    "",
+                ]
+            ),
+        )
+
+    def test_collate_metaphlan_profiles_skips_version_header(self):
+        first = MetaphlanMergedAbundanceDirectoryFormat()
+        second = MetaphlanMergedAbundanceDirectoryFormat()
+        (first.path / "table.tsv").write_text(
+            "#mpa_vTest\n"
+            "clade_name\tNCBI_tax_id\tsample-a\n"
+            "k__Bacteria\t2\t42.0\n"
+        )
+        (second.path / "table.tsv").write_text(
+            "#mpa_vTest\n"
+            "clade_name\tNCBI_tax_id\tsample-b\n"
+            "k__Archaea\t2157\t7.5\n"
+        )
+
+        observed = collate_metaphlan_profiles([first, second])
+
+        self.assertEqual(
+            (observed.path / "table.tsv").read_text(),
+            "\n".join(
+                [
+                    "clade_name\tNCBI_tax_id\tsample-a\tsample-b",
+                    "k__Archaea\t2157\t0.0\t7.5",
+                    "k__Bacteria\t2\t42.0\t0.0",
+                    "",
+                ]
+            ),
+        )
+
+    def test_run_humann_pipeline_merges_partition_artifacts(self):
+        translated_search_database = self._make_humann_database(
+            "translated-search", "uniref90_diamond"
+        )
+        partition_outputs = [
+            (
+                self._make_table_artifact(
+                    HumannGeneFamilyDirectoryFormat,
+                    "# Gene Family\tsample-a\nUniRef90_A\t1.0\n",
+                ),
+                self._make_table_artifact(
+                    HumannPathAbundanceDirectoryFormat,
+                    "# Pathway\tsample-a\nPWY-A\t3.0\n",
+                ),
+                self._make_table_artifact(
+                    MetaphlanMergedAbundanceDirectoryFormat,
+                    "clade_name\tNCBI_tax_id\tsample-a\n"
+                    "k__Bacteria\t2\t42.0\n",
+                ),
+                object(),
+            ),
+            (
+                self._make_table_artifact(
+                    HumannGeneFamilyDirectoryFormat,
+                    "# Gene Family\tsample-b\nUniRef90_B\t2.0\n",
+                ),
+                self._make_table_artifact(
+                    HumannPathAbundanceDirectoryFormat,
+                    "# Pathway\tsample-b\nPWY-B\t4.0\n",
+                ),
+                self._make_table_artifact(
+                    MetaphlanMergedAbundanceDirectoryFormat,
+                    "clade_name\tNCBI_tax_id\tsample-b\n"
+                    "k__Archaea\t2157\t7.5\n",
+                ),
+                object(),
+            ),
+        ]
+        ctx = _Context(partition_outputs)
+
+        def _mock_regroup(input_path, database, output_path):
+            self.assertTrue(input_path.exists())
+            self.assertEqual(
+                database.path, translated_search_database.path
+            )
+            output_path.write_text(
+                "reaction\tsample-a\tsample-b\nR1\t1.0\t2.0\n"
+            )
+
+        with patch(
+            "q2_humann.run._regroup_gene_families_to_reactions",
+            side_effect=_mock_regroup,
+        ):
+            gene_families, path_abundance, metaphlan_profile, reactions = (
+                run_humann(
+                    ctx,
+                    _ReadsArtifact(),
+                    object(),
+                    _Artifact(translated_search_database),
+                    object(),
+                    num_partitions=2,
+                )
+            )
+
+        self.assertIn(
+            "UniRef90_A\t1.0\t0.0",
+            (gene_families.view(
+                HumannGeneFamilyDirectoryFormat
+            ).path / "table.tsv").read_text(),
+        )
+        self.assertIn(
+            "PWY-B\t0.0\t4.0",
+            (path_abundance.view(
+                HumannPathAbundanceDirectoryFormat
+            ).path / "table.tsv").read_text(),
+        )
+        self.assertIn(
+            "k__Archaea\t2157\t0.0\t7.5",
+            (metaphlan_profile.view(
+                MetaphlanMergedAbundanceDirectoryFormat
+            ).path / "table.tsv").read_text(),
+        )
+        self.assertIn(
+            "R1\t1.0\t2.0",
+            (reactions.view(
+                HumannReactionDirectoryFormat
+            ).path / "table.tsv").read_text(),
+        )
 
     def test_merge_metaphlan_profiles(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -312,7 +548,7 @@ class RunHumannTests(TestPluginBase):
             "q2_humann.run.run_humann_command",
             side_effect=_mock_run_command,
         ) as run_command:
-            observed = run_humann(
+            observed = _run_humann(
                 reads,
                 nucleotide_database,
                 translated_search_database,

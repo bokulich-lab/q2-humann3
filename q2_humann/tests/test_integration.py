@@ -17,7 +17,7 @@ from unittest.mock import patch
 import pandas as pd
 from qiime2.plugin.testing import TestPluginBase
 
-from q2_humann.run import run_humann
+from q2_humann.run import _run_humann
 from q2_humann._types_and_formats import (
     HumannDatabaseDirFmt,
     MetaphlanDatabaseDirFmt,
@@ -171,7 +171,7 @@ Path(sys.argv[sys.argv.index("--bowtie2out") + 1]).write_text("")
             {"PATH": f"{fake_bin_dir}{os.pathsep}{os.environ['PATH']}"},
         ):
             gene_families, path_abundance, metaphlan_profile, reactions = (
-                run_humann(
+                _run_humann(
                     reads,
                     nucleotide_database,
                     translated_search_database,
