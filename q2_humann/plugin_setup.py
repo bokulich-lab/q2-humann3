@@ -80,21 +80,21 @@ plugin.register_artifact_class(
     HumannDatabase[ChocoPhlAn],
     directory_format=HumannDatabaseDirFmt,
     description=(
-        "A staged HUMANN ChocoPhlAn nucleotide database directory."
+        "A HUMANN ChocoPhlAn nucleotide database."
     ),
 )
 plugin.register_artifact_class(
     HumannDatabase[TranslatedSearch],
     directory_format=HumannDatabaseDirFmt,
     description=(
-        "A staged HUMANN translated-search database directory."
+        "A HUMANN translated-search database."
     ),
 )
 plugin.register_artifact_class(
     MetaphlanDatabase,
     directory_format=MetaphlanDatabaseDirFmt,
     description=(
-        "A staged MetaPhlAn database directory."
+        "A MetaPhlAn database."
     ),
 )
 plugin.register_semantic_type_to_format(
@@ -111,7 +111,7 @@ plugin.methods.register_function(
     parameter_descriptions={},
     output_descriptions={
         "database": (
-            "The downloaded HUMANN ChocoPhlAn nucleotide database directory."
+            "The downloaded HUMANN ChocoPhlAn nucleotide database."
         )
     },
     name="Download ChocoPhlAn database",
@@ -133,7 +133,7 @@ plugin.methods.register_function(
     input_descriptions={},
     parameter_descriptions={
         "index": (
-            "The MetaPhlAn database index to install, such as 'latest' or "
+            "The MetaPhlAn database index to download, such as 'latest' or "
             "a specific mpa_v... identifier."
         ),
         "cpus": (
@@ -142,11 +142,37 @@ plugin.methods.register_function(
         ),
     },
     output_descriptions={
-        "database": "The downloaded MetaPhlAn database directory."
+        "database": "The downloaded MetaPhlAn database."
     },
     name="Download MetaPhlAn database",
     description=(
-        "Download a MetaPhlAn database into a staged artifact directory."
+        "Download a MetaPhlAn database."
+    ),
+    citations=[citations["Beghini-etal-2021"]],
+)
+
+plugin.methods.register_function(
+    function=download_translated_search_database,
+    inputs={},
+    parameters={
+        "build": Str % Choices(TRANSLATED_SEARCH_DATABASE_BUILDS),
+    },
+    outputs=[("database", HumannDatabase[TranslatedSearch])],
+    input_descriptions={},
+    parameter_descriptions={
+        "build": (
+            "The HUMANN translated-search database build to download."
+        )
+    },
+    output_descriptions={
+        "database": (
+            "The downloaded HUMANN translated-search database."
+        )
+    },
+    name="Download translated-search database",
+    description=(
+        "Download a HUMANN translated-search database without updating the "
+        "user's HUMANN configuration."
     ),
     citations=[citations["Beghini-etal-2021"]],
 )
@@ -260,32 +286,6 @@ plugin.methods.register_function(
         "and MetaPhlAn profile tables across samples and derive a reactions "
         "table from the merged gene families, using staged HUMANN and "
         "MetaPhlAn database artifacts."
-    ),
-    citations=[citations["Beghini-etal-2021"]],
-)
-
-plugin.methods.register_function(
-    function=download_translated_search_database,
-    inputs={},
-    parameters={
-        "build": Str % Choices(TRANSLATED_SEARCH_DATABASE_BUILDS),
-    },
-    outputs=[("database", HumannDatabase[TranslatedSearch])],
-    input_descriptions={},
-    parameter_descriptions={
-        "build": (
-            "The HUMANN translated-search database build to download."
-        )
-    },
-    output_descriptions={
-        "database": (
-            "The downloaded HUMANN translated-search database directory."
-        )
-    },
-    name="Download translated-search database",
-    description=(
-        "Download a HUMANN translated-search database without updating the "
-        "user's HUMANN configuration."
     ),
     citations=[citations["Beghini-etal-2021"]],
 )
