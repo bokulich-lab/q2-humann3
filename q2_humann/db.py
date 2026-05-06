@@ -7,6 +7,7 @@
 # ----------------------------------------------------------------------------
 
 import json
+import shutil
 from pathlib import Path
 from typing import Union
 
@@ -92,14 +93,13 @@ def _download_humann_database(
 ) -> HumannDatabaseDirFmt:
     """Download a HUMANN database and stage it as a QIIME 2 artifact."""
     artifact = HumannDatabaseDirFmt()
-    install_dir = artifact.path
 
     cmd = [
         "humann_databases",
         "--download",
         database,
         build,
-        str(install_dir),
+        str(artifact.path),
         "--update-config",
         "no",
     ]
@@ -111,11 +111,30 @@ def _download_humann_database(
             f"humann_databases failed: {exc}"
         ) from exc
 
-    if not any(install_dir.iterdir()):
+    if not any(artifact.path.iterdir()):
         raise RuntimeError(
             "humann_databases completed successfully but did not produce "
             "any database files."
         )
+
+    # Prune unexpected files from HUMANN database
+    allowed_extensions = (".ffn.gz", ".faa.gz", ".fna.gz", ".dmnd", ".fna")
+    for path in list(artifact.path.iterdir()):
+        if path.name in ("metadata.json", database):
+            continue
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+
+    subdir = artifact.path / database
+    for path in list(subdir.iterdir()):
+        if not path.name.endswith(allowed_extensions):
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+
 
     _write_database_metadata(
         artifact,
@@ -151,13 +170,12 @@ def download_metaphlan_database(
 ) -> MetaphlanDatabaseDirFmt:
     """Download, validate, and stage a MetaPhlAn database."""
     artifact = MetaphlanDatabaseDirFmt()
-    install_dir = artifact.path
 
     cmd = [
         "metaphlan",
         "--install",
         "--bowtie2db",
-        str(install_dir),
+        str(artifact.path),
         "-x",
         index,
         "--nproc",
@@ -165,14 +183,26 @@ def download_metaphlan_database(
     ]
     run_humann_command(cmd)
 
-    if not any(install_dir.iterdir()):
+    if not any(artifact.path.iterdir()):
         raise RuntimeError(
             "MetaPhlAn completed successfully but did not produce any "
             "database files."
         )
 
-    resolved_index = _infer_metaphlan_index(install_dir)
-    _validate_metaphlan_database(install_dir, resolved_index)
+    resolved_index = _infer_metaphlan_index(artifact.path)
+
+    # Prune unexpected files from MetaPhlAn database
+    allowed_extensions = (".pkl", ".bt2", ".bt2l")
+    for path in list(artifact.path.iterdir()):
+        if path.name == "metadata.json":
+            continue
+        if not path.name.endswith(allowed_extensions):
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+
+    _validate_metaphlan_database(artifact.path, resolved_index)
     _write_database_metadata(
         artifact,
         database_kind="metaphlan",

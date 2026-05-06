@@ -85,6 +85,14 @@ class RunHumannIntegrationTests(TestPluginBase):
 
         database = HumannDatabaseDirFmt()
         shutil.copytree(source_dir, database.path / payload_dir)
+
+        # Ensure at least one file with the required extension exists
+        extension = ".ffn.gz" if database_kind == "chocophlan" else ".dmnd"
+        if not list((database.path / payload_dir).glob(f"*{extension}")):
+            (database.path / payload_dir / f"demo{extension}").write_bytes(
+                b"data"
+            )
+
         with (database.path / "metadata.json").open("w") as fh:
             json.dump(
                 {"database_kind": database_kind, "build": build},
@@ -109,13 +117,20 @@ class RunHumannIntegrationTests(TestPluginBase):
 
     def _make_toy_metaphlan_database(self) -> MetaphlanDatabaseDirFmt:
         database = MetaphlanDatabaseDirFmt()
-        (database.path / "mpa_vTest.pkl").write_bytes(b"taxonomy")
+        index = "mpa_vTest"
+        (database.path / f"{index}.pkl").write_bytes(b"taxonomy")
+        for suffix in (
+            "1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"
+        ):
+            (database.path / f"{index}.{suffix}").write_bytes(b"bowtie")
+
         with (database.path / "metadata.json").open("w") as fh:
             json.dump(
-                {"database_kind": "metaphlan", "index": "mpa_vTest"},
+                {"database_kind": "metaphlan", "index": index},
                 fh,
             )
         return database
+
 
     def _make_toy_metaphlan_database_artifact(self) -> Artifact:
         return Artifact.import_data(

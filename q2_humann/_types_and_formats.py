@@ -58,12 +58,47 @@ class HumannDatabaseDirFmt(model.DirectoryFormat):
         "metadata.json", format=HumannDatabaseMetadataFormat
     )
     payload = model.FileCollection(
-        r"(?!metadata\.json$).+", format=HumannDatabaseFileFormat
+        r"(chocophlan|uniref)/.+\.(ffn\.gz|faa\.gz|fna\.gz|dmnd|fna)$",
+        format=HumannDatabaseFileFormat
     )
 
     @payload.set_path_maker
     def payload_path_maker(self, relative_path: str):
         return relative_path
+
+    def _validate_(self, level):
+        with (self.path / "metadata.json").open() as fh:
+            metadata = json.load(fh)
+
+        kind = metadata["database_kind"]
+        if kind == "chocophlan":
+            expected_dir = self.path / "chocophlan"
+            if not expected_dir.is_dir():
+                raise ValidationError(
+                    "HUMANN chocophlan database must contain a 'chocophlan' "
+                    "subdirectory."
+                )
+            if not any(expected_dir.glob("*.f*n.gz")):
+                raise ValidationError(
+                    "HUMANN chocophlan database must contain '.ffn.gz', "
+                    "'.faa.gz', or '.fna.gz' files in the 'chocophlan' "
+                    "subdirectory."
+                )
+        elif kind == "translated-search":
+            expected_dir = self.path / "uniref"
+            if not expected_dir.is_dir():
+                raise ValidationError(
+                    "HUMANN translated-search database must contain a "
+                    "'uniref' subdirectory."
+                )
+            if not (
+                list(expected_dir.glob("*.dmnd")) or
+                list(expected_dir.glob("*.fna"))
+            ):
+                raise ValidationError(
+                    "HUMANN translated-search database must contain '.dmnd' "
+                    "or '.fna' files in the 'uniref' subdirectory."
+                )
 
 
 class MetaphlanDatabaseMetadataFormat(model.TextFileFormat):
@@ -100,12 +135,55 @@ class MetaphlanDatabaseDirFmt(model.DirectoryFormat):
         "metadata.json", format=MetaphlanDatabaseMetadataFormat
     )
     payload = model.FileCollection(
-        r"(?!metadata\.json$).+", format=MetaphlanDatabaseFileFormat
+        r".+\.(pkl|bt2|bt2l)$", format=MetaphlanDatabaseFileFormat
     )
 
     @payload.set_path_maker
     def payload_path_maker(self, relative_path: str):
         return relative_path
+
+    def _validate_(self, level):
+        with (self.path / "metadata.json").open() as fh:
+            metadata = json.load(fh)
+
+        index = metadata["index"]
+        pkl_path = self.path / f"{index}.pkl"
+        if not pkl_path.exists():
+            raise ValidationError(
+                f"MetaPhlAn database is missing the expected pickle file: "
+                f"{index}.pkl"
+            )
+
+        bt2_ext = None
+        if (self.path / f"{index}.1.bt2").exists():
+            bt2_ext = "bt2"
+        elif (self.path / f"{index}.1.bt2l").exists():
+            bt2_ext = "bt2l"
+
+        if bt2_ext is None:
+            raise ValidationError(
+                f"MetaPhlAn database is missing Bowtie2 index files for "
+                f"index {index!r}."
+            )
+
+        required_suffixes = (
+            f"1.{bt2_ext}",
+            f"2.{bt2_ext}",
+            f"3.{bt2_ext}",
+            f"4.{bt2_ext}",
+            f"rev.1.{bt2_ext}",
+            f"rev.2.{bt2_ext}",
+        )
+        missing = [
+            suffix for suffix in required_suffixes
+            if not (self.path / f"{index}.{suffix}").exists()
+        ]
+        if missing:
+            missing_str = ", ".join(missing)
+            raise ValidationError(
+                f"MetaPhlAn database is missing required Bowtie2 files for "
+                f"index {index!r}: {missing_str}"
+            )
 
 
 class HumannReactionFormat(HumannTableFormat):

@@ -112,7 +112,13 @@ class RunHumannTests(TestPluginBase):
         self, database_kind: str, build: str
     ) -> HumannDatabaseDirFmt:
         database = HumannDatabaseDirFmt()
-        (database.path / database_kind).mkdir()
+        payload_dir = (
+            "chocophlan" if database_kind == "chocophlan" else "uniref"
+        )
+        (database.path / payload_dir).mkdir()
+        extension = ".ffn.gz" if database_kind == "chocophlan" else ".dmnd"
+        (database.path / payload_dir / f"db{extension}").write_bytes(b"data")
+
         with (database.path / "metadata.json").open("w") as fh:
             json.dump(
                 {"database_kind": database_kind, "build": build},
@@ -122,10 +128,16 @@ class RunHumannTests(TestPluginBase):
 
     def _make_metaphlan_database(self) -> MetaphlanDatabaseDirFmt:
         database = MetaphlanDatabaseDirFmt()
-        (database.path / "mpa_vTest.pkl").write_bytes(b"taxonomy")
+        index = "mpa_vTest"
+        (database.path / f"{index}.pkl").write_bytes(b"taxonomy")
+        for suffix in (
+            "1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"
+        ):
+            (database.path / f"{index}.{suffix}").write_bytes(b"bowtie")
+
         with (database.path / "metadata.json").open("w") as fh:
             json.dump(
-                {"database_kind": "metaphlan", "index": "mpa_vTest"},
+                {"database_kind": "metaphlan", "index": index},
                 fh,
             )
         return database

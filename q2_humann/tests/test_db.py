@@ -1,5 +1,5 @@
 # ----------------------------------------------------------------------------
-# Copyright (c) 2024, Michal Ziemski.
+# Copyright (c) 2026, Bokulich Lab.
 #
 # Distributed under the terms of the Modified BSD License.
 #
@@ -30,54 +30,6 @@ from q2_humann._types_and_formats import (
 class DownloadDatabaseTests(TestPluginBase):
     package = "q2_humann.tests"
 
-    def _mock_humann_download(
-        self, expected_database: str, expected_build: str
-    ):
-        def _runner(cmd):
-            self.assertEqual(
-                cmd[:5],
-                [
-                    "humann_databases",
-                    "--download",
-                    expected_database,
-                    expected_build,
-                    cmd[4],
-                ],
-            )
-            self.assertEqual(cmd[5:], ["--update-config", "no"])
-            install_dir = Path(cmd[4])
-            database_dir = install_dir / expected_database
-            database_dir.mkdir()
-            (database_dir / f"{expected_build}.1").write_bytes(b"db-data")
-            return subprocess.CompletedProcess(cmd, 0, "", "")
-
-        return _runner
-
-    def _mock_metaphlan_download(
-        self, expected_index: str, expected_cpus: int, resolved_index: str
-    ):
-        def _runner(cmd):
-            self.assertEqual(
-                cmd,
-                [
-                    "metaphlan",
-                    "--install",
-                    "--bowtie2db",
-                    cmd[3],
-                    "-x",
-                    expected_index,
-                    "--nproc",
-                    str(expected_cpus),
-                ],
-            )
-            install_dir = Path(cmd[3])
-            self._write_complete_metaphlan_database(
-                install_dir, resolved_index
-            )
-            return subprocess.CompletedProcess(cmd, 0, "", "")
-
-        return _runner
-
     def _write_complete_metaphlan_database(
         self, install_dir: Path, index: str, suffix: str = "bt2"
     ) -> None:
@@ -93,20 +45,23 @@ class DownloadDatabaseTests(TestPluginBase):
             (install_dir / f"{index}.{required}").write_bytes(b"bowtie")
 
     def test_download_chocophlan_database(self):
+        def _side_effect(cmd):
+            (Path(cmd[4]) / "chocophlan").mkdir()
+            (Path(cmd[4]) / "chocophlan" / "full.ffn.gz").touch()
+
         with patch(
-            "q2_humann.db.run_humann_command",
-            side_effect=self._mock_humann_download("chocophlan", "full"),
+            "q2_humann.db.run_humann_command", side_effect=_side_effect
         ) as run_command:
             observed = download_chocophlan_database()
 
+        run_command.assert_called_once_with([
+            "humann_databases", "--download", "chocophlan", "full",
+            str(observed.path), "--update-config", "no"
+        ])
+
         self.assertIsInstance(observed, HumannDatabaseDirFmt)
-        observed_cmd = run_command.call_args.args[0]
-        self.assertEqual(
-            Path(observed_cmd[observed_cmd.index("full") + 1]),
-            observed.path,
-        )
         self.assertTrue(
-            (observed.path / "chocophlan" / "full.1").exists()
+            (observed.path / "chocophlan" / "full.ffn.gz").exists()
         )
         with open(observed.path / "metadata.json") as fh:
             metadata = json.load(fh)
@@ -117,20 +72,24 @@ class DownloadDatabaseTests(TestPluginBase):
 
     def test_download_translated_search_database(self):
         build = "uniref50_ec_filtered_diamond"
+
+        def _side_effect(cmd):
+            (Path(cmd[4]) / "uniref").mkdir()
+            (Path(cmd[4]) / "uniref" / f"{build}.dmnd").touch()
+
         with patch(
-            "q2_humann.db.run_humann_command",
-            side_effect=self._mock_humann_download("uniref", build),
+            "q2_humann.db.run_humann_command", side_effect=_side_effect
         ) as run_command:
             observed = download_translated_search_database(build=build)
 
+        run_command.assert_called_once_with([
+            "humann_databases", "--download", "uniref", build,
+            str(observed.path), "--update-config", "no"
+        ])
+
         self.assertIsInstance(observed, HumannDatabaseDirFmt)
-        observed_cmd = run_command.call_args.args[0]
-        self.assertEqual(
-            Path(observed_cmd[observed_cmd.index(build) + 1]),
-            observed.path,
-        )
         self.assertTrue(
-            (observed.path / "uniref" / f"{build}.1").exists()
+            (observed.path / "uniref" / f"{build}.dmnd").exists()
         )
         with open(observed.path / "metadata.json") as fh:
             metadata = json.load(fh)
@@ -162,35 +121,30 @@ class DownloadDatabaseTests(TestPluginBase):
                 download_chocophlan_database()
 
     def test_download_metaphlan_database(self):
+        index = "mpa_vJan21_CHOCOPhlAnSGB_202103"
+
+        def _side_effect(cmd):
+            self._write_complete_metaphlan_database(Path(cmd[3]), index)
+
         with patch(
-            "q2_humann.db.run_humann_command",
-            side_effect=self._mock_metaphlan_download(
-                expected_index="latest",
-                expected_cpus=4,
-                resolved_index="mpa_vJan21_CHOCOPhlAnSGB_202103",
-            ),
+            "q2_humann.db.run_humann_command", side_effect=_side_effect
         ) as run_command:
             observed = download_metaphlan_database(cpus=4)
 
+        run_command.assert_called_once_with([
+            "metaphlan", "--install", "--bowtie2db", str(observed.path),
+            "-x", "latest", "--nproc", "4"
+        ])
+
         self.assertIsInstance(observed, MetaphlanDatabaseDirFmt)
-        observed_cmd = run_command.call_args.args[0]
-        self.assertEqual(
-            Path(observed_cmd[observed_cmd.index("--bowtie2db") + 1]),
-            observed.path,
-        )
-        self.assertTrue(
-            (
-                observed.path
-                / "mpa_vJan21_CHOCOPhlAnSGB_202103.pkl"
-            ).exists()
-        )
+        self.assertTrue((observed.path / f"{index}.pkl").exists())
         with open(observed.path / "metadata.json") as fh:
             metadata = json.load(fh)
         self.assertEqual(
             metadata,
             {
                 "database_kind": "metaphlan",
-                "index": "mpa_vJan21_CHOCOPhlAnSGB_202103",
+                "index": index,
             },
         )
 
@@ -203,6 +157,80 @@ class DownloadDatabaseTests(TestPluginBase):
                 RuntimeError, "did not produce any database files"
             ):
                 download_metaphlan_database()
+
+    def test_download_chocophlan_database_prunes_unexpected(self):
+        def _side_effect(cmd):
+            install_dir = Path(cmd[4])
+            (install_dir / "chocophlan").mkdir()
+            (install_dir / "chocophlan" / "full.ffn.gz").touch()
+            (install_dir / "chocophlan" / "junk.txt").touch()
+            (install_dir / "junk_dir").mkdir()
+            (install_dir / "root_junk.txt").touch()
+
+        with patch(
+            "q2_humann.db.run_humann_command", side_effect=_side_effect
+        ):
+            observed = download_chocophlan_database()
+
+        self.assertTrue(
+            (observed.path / "chocophlan" / "full.ffn.gz").exists()
+        )
+        self.assertFalse(
+            (observed.path / "chocophlan" / "junk.txt").exists()
+        )
+        self.assertFalse((observed.path / "junk_dir").exists())
+        self.assertFalse((observed.path / "root_junk.txt").exists())
+
+    def test_download_metaphlan_database_prunes_unexpected(self):
+        index = "mpa_vJan21_CHOCOPhlAnSGB_202103"
+
+        def _side_effect(cmd):
+            install_dir = Path(cmd[3])
+            self._write_complete_metaphlan_database(install_dir, index)
+            (install_dir / "other_index.pkl").touch()
+            (install_dir / "metaphlan_log.txt").touch()
+
+        with patch(
+            "q2_humann.db.run_humann_command", side_effect=_side_effect
+        ):
+            observed = download_metaphlan_database()
+
+        self.assertTrue((observed.path / f"{index}.pkl").exists())
+        self.assertFalse((observed.path / "other_index.pkl").exists())
+        self.assertFalse((observed.path / "metaphlan_log.txt").exists())
+
+    def test_humann_database_validation(self):
+        # Valid ChocoPhlAn
+        db = HumannDatabaseDirFmt()
+        (db.path / "chocophlan").mkdir()
+        (db.path / "chocophlan" / "data.ffn.gz").write_bytes(b"data")
+        with (db.path / "metadata.json").open("w") as fh:
+            json.dump({"database_kind": "chocophlan", "build": "full"}, fh)
+        db.validate()
+
+        # Valid Translated Search
+        db = HumannDatabaseDirFmt()
+        (db.path / "uniref").mkdir()
+        (db.path / "uniref" / "data.dmnd").write_bytes(b"data")
+        with (db.path / "metadata.json").open("w") as fh:
+            json.dump(
+                {"database_kind": "translated-search", "build": "uniref90"}, fh
+            )
+        db.validate()
+
+    def test_metaphlan_database_validation(self):
+        db = MetaphlanDatabaseDirFmt()
+        index = "mpa_vTest"
+        (db.path / f"{index}.pkl").write_bytes(b"taxonomy")
+        for suffix in (
+            "1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"
+        ):
+            (db.path / f"{index}.{suffix}").write_bytes(b"bowtie")
+
+        with (db.path / "metadata.json").open("w") as fh:
+            json.dump({"database_kind": "metaphlan", "index": index}, fh)
+        db.validate()
+
 
     def test_infer_metaphlan_index(self):
         with tempfile.TemporaryDirectory() as tmpdir:
