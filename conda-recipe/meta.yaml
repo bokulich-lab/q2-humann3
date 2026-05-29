@@ -13,7 +13,7 @@ requirements:
   - wheel
   run:
   - bowtie2
-  - humann3 <4
+  - humann <4
   - metaphlan <4
   - qiime2 >={{ qiime2 }}
   - q2-sapienns >={{ q2_sapienns }}
