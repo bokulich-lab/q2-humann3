@@ -1,5 +1,5 @@
 # ----------------------------------------------------------------------------
-# Copyright (c) 2024, Michal Ziemski.
+# Copyright (c) 2026, Bokulich Lab.
 #
 # Distributed under the terms of the Modified BSD License.
 #
