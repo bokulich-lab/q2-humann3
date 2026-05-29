@@ -424,10 +424,12 @@ def run_humann(
     else:
         raise NotImplementedError()
 
-    _humann = ctx.get_action("humann", "_run_humann")
-    _collate_gene_families = ctx.get_action("humann", "collate_gene_families")
-    _collate_path_abundance = ctx.get_action("humann", "collate_path_abundance")
-    _collate_metaphlan_profiles = ctx.get_action("humann", "collate_metaphlan_profiles")
+    _humann = ctx.get_action("humann3", "_run_humann")
+    _collate_gene_families = ctx.get_action("humann3", "collate_gene_families")
+    _collate_path_abundance = ctx.get_action("humann3", "collate_path_abundance")
+    _collate_metaphlan_profiles = ctx.get_action(
+        "humann3", "collate_metaphlan_profiles"
+    )
 
     (partitioned_reads,) = _partition_reads(reads, num_partitions)
 
