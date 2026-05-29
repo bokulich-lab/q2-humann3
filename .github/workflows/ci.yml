@@ -1,60 +1,16 @@
-name: Test build
-
+name: CI
 on:
   pull_request:
     branches: ["main"]
   push:
     branches: ["main"]
+    tags: ["*"]
+  release:
+    types: [published]
 
 jobs:
-  build-q2-humann3:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-15-intel]
-
-    steps:
-    - name: checkout source
-      uses: actions/checkout@v6.0.2
-
-    - name: set up python 3.12
-      uses: actions/setup-python@v6.2.0
-      with:
-        python-version: 3.12
-
-    - name: install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -q flake8
-        pip install -q https://github.com/qiime2/q2lint/archive/master.zip
-
-    - name: Set up Conda
-      uses: qiime2-cutlery/setup-miniconda@v3
-      with:
-        activate-environment: q2-humann3-dev
-        environment-file: environment-files/q2-humann3-qiime2-tiny-dev.yml
-        auto-activate-base: false
-
-    - name: Install plugin
-      shell: bash -l {0}
-      run: make install
-
-    - name: Call info on the deployment
-      shell: bash -l {0}
-      run: |
-        qiime info
-
-    - name: Call --help on plugin
-      shell: bash -l {0}
-      run: |
-        qiime humann3 --help
-
-    - name: Test plugin
-      shell: bash -l {0}
-      run: make test
-
-    - name: Lint plugin
-      shell: bash -l {0}
-      run: |
-        flake8
-        q2lint
+  ci:
+    uses: bokulich-lab/utilities/.github/workflows/ci.yaml@main
+    with:
+      distro: tiny
+      build_docker: true
