@@ -1,0 +1,37 @@
+package:
+  name: q2-humann3
+  version: {{ PLUGIN_VERSION }}
+source:
+  path: ..
+build:
+  script: make install
+requirements:
+  host:
+  - python {{ python }}
+  - setuptools
+  - versioningit
+  - wheel
+  run:
+  - bowtie2
+  - humann3 <4
+  - metaphlan <4
+  - qiime2 >={{ qiime2 }}
+  - q2-sapienns >={{ q2_sapienns }}
+  - q2-types >={{ q2_types }}
+  build:
+  - python {{ python }}
+  - setuptools
+  - versioningit
+test:
+  requires:
+  - parameterized
+  - pytest-xdist
+  imports:
+  - q2_humann3
+  - qiime2.plugins.humann3
+  commands:
+  - pytest --pyargs q2_humann3 -n 4
+about:
+  home: https://github.com/bokulich-lab/q2-humann3
+  license: BSD-3-Clause
+  license_family: BSD
