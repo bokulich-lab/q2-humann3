@@ -12,9 +12,7 @@ from qiime2.plugin import SemanticType, ValidationError, model
 from q2_sapienns.plugin_setup import HumannTableFormat
 
 HumannDatabase = SemanticType("HumannDatabase", field_names="kind")
-ChocoPhlAn = SemanticType(
-    "ChocoPhlAn", variant_of=HumannDatabase.field["kind"]
-)
+ChocoPhlAn = SemanticType("ChocoPhlAn", variant_of=HumannDatabase.field["kind"])
 TranslatedSearch = SemanticType(
     "TranslatedSearch", variant_of=HumannDatabase.field["kind"]
 )
@@ -40,8 +38,7 @@ class HumannDatabaseMetadataFormat(model.TextFileFormat):
 
         if metadata["database_kind"] not in self._allowed_kinds:
             raise ValidationError(
-                "Unsupported HUMANN database kind "
-                f"{metadata['database_kind']!r}."
+                "Unsupported HUMANN database kind " f"{metadata['database_kind']!r}."
             )
 
 
@@ -54,12 +51,10 @@ class HumannDatabaseFileFormat(model.BinaryFileFormat):
 
 
 class HumannDatabaseDirFmt(model.DirectoryFormat):
-    metadata = model.File(
-        "metadata.json", format=HumannDatabaseMetadataFormat
-    )
+    metadata = model.File("metadata.json", format=HumannDatabaseMetadataFormat)
     payload = model.FileCollection(
         r"(chocophlan|uniref)/.+\.(ffn\.gz|faa\.gz|fna\.gz|dmnd|fna)$",
-        format=HumannDatabaseFileFormat
+        format=HumannDatabaseFileFormat,
     )
 
     @payload.set_path_maker
@@ -92,8 +87,7 @@ class HumannDatabaseDirFmt(model.DirectoryFormat):
                     "'uniref' subdirectory."
                 )
             if not (
-                list(expected_dir.glob("*.dmnd")) or
-                list(expected_dir.glob("*.fna"))
+                list(expected_dir.glob("*.dmnd")) or list(expected_dir.glob("*.fna"))
             ):
                 raise ValidationError(
                     "HUMANN translated-search database must contain '.dmnd' "
@@ -117,8 +111,7 @@ class MetaphlanDatabaseMetadataFormat(model.TextFileFormat):
 
         if metadata["database_kind"] != "metaphlan":
             raise ValidationError(
-                "Unsupported MetaPhlAn database kind "
-                f"{metadata['database_kind']!r}."
+                "Unsupported MetaPhlAn database kind " f"{metadata['database_kind']!r}."
             )
 
 
@@ -131,9 +124,7 @@ class MetaphlanDatabaseFileFormat(model.BinaryFileFormat):
 
 
 class MetaphlanDatabaseDirFmt(model.DirectoryFormat):
-    metadata = model.File(
-        "metadata.json", format=MetaphlanDatabaseMetadataFormat
-    )
+    metadata = model.File("metadata.json", format=MetaphlanDatabaseMetadataFormat)
     payload = model.FileCollection(
         r".+\.(pkl|bt2|bt2l)$", format=MetaphlanDatabaseFileFormat
     )
@@ -175,7 +166,8 @@ class MetaphlanDatabaseDirFmt(model.DirectoryFormat):
             f"rev.2.{bt2_ext}",
         )
         missing = [
-            suffix for suffix in required_suffixes
+            suffix
+            for suffix in required_suffixes
             if not (self.path / f"{index}.{suffix}").exists()
         ]
         if missing:
@@ -188,7 +180,7 @@ class MetaphlanDatabaseDirFmt(model.DirectoryFormat):
 
 class HumannReactionFormat(HumannTableFormat):
     # Regrouped from joined genefamilies; column names keep the RPKs suffix.
-    _unit_label = 'RPKs'
+    _unit_label = "RPKs"
 
 
 class MetaphlanMergedAbundanceFormat(model.TextFileFormat):
@@ -196,45 +188,44 @@ class MetaphlanMergedAbundanceFormat(model.TextFileFormat):
     def _equal_number_of_columns(self, n_lines):
         with self.open() as fh:
             header_line = fh.readline()
-            while header_line.startswith('#'):
+            while header_line.startswith("#"):
                 header_line = fh.readline()
-            n_header_fields = len(header_line.split('\t'))
+            n_header_fields = len(header_line.split("\t"))
             if n_header_fields < 3:
-                raise ValidationError('No sample columns appear to be present.')
+                raise ValidationError("No sample columns appear to be present.")
             for idx, line in enumerate(fh, 2):
                 if n_lines is not None and idx > n_lines + 1:
                     break
-                fields = line.strip().split('\t')
+                fields = line.strip().split("\t")
                 n_fields = len(fields)
                 if n_fields != n_header_fields:
                     raise ValidationError(
-                        'Number of columns on line %d is inconsistent with '
-                        'the header line.' % line)
+                        "Number of columns on line %d is inconsistent with "
+                        "the header line." % line
+                    )
                 for value in fields[2:]:
                     try:
                         value = float(value)
                     except ValueError:
                         raise ValidationError(
-                            'Values in table must be float-able. Found: %s' %
-                            value
+                            "Values in table must be float-able. Found: %s" % value
                         )
                     if value > 100.0 or value < 0.0:
                         raise ValidationError(
-                            'Values must be in range [0, 100]. Found: %f' %
-                            value
+                            "Values must be in range [0, 100]. Found: %f" % value
                         )
 
     def _validate_(self, level):
-        level_to_n_lines = {'min': 5, 'max': None}
+        level_to_n_lines = {"min": 5, "max": None}
         self._equal_number_of_columns(level_to_n_lines[level])
 
 
 HumannReactionDirectoryFormat = model.SingleFileDirectoryFormat(
-    'HumannReactionDirectoryFormat', 'table.tsv',
-    HumannReactionFormat
+    "HumannReactionDirectoryFormat", "table.tsv", HumannReactionFormat
 )
 
 MetaphlanMergedAbundanceDirectoryFormat = model.SingleFileDirectoryFormat(
-    'MetaphlanMergedAbundanceDirectoryFormat', 'table.tsv',
-    MetaphlanMergedAbundanceFormat
+    "MetaphlanMergedAbundanceDirectoryFormat",
+    "table.tsv",
+    MetaphlanMergedAbundanceFormat,
 )

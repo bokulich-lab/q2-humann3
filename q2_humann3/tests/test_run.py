@@ -70,17 +70,11 @@ class RunHumannTests(TestPluginBase):
         return pd.DataFrame(
             {
                 "forward": {
-                    "sample-a": self._gzip_fixture(
-                        "sample-a-forward.fastq"
-                    ),
-                    "sample-b": self._gzip_fixture(
-                        "sample-b-forward.fastq"
-                    ),
+                    "sample-a": self._gzip_fixture("sample-a-forward.fastq"),
+                    "sample-b": self._gzip_fixture("sample-b-forward.fastq"),
                 },
                 "reverse": {
-                    "sample-a": self._gzip_fixture(
-                        "sample-a-reverse.fastq"
-                    ),
+                    "sample-a": self._gzip_fixture("sample-a-reverse.fastq"),
                     "sample-b": None,
                 },
             }
@@ -94,9 +88,7 @@ class RunHumannTests(TestPluginBase):
         }
         for sample_id, fixture_name in fixtures.items():
             source_path = Path(self.get_data_path(fixture_name))
-            destination_path = (
-                reads.path / f"{sample_id}_S1_L001_R1_001.fastq.gz"
-            )
+            destination_path = reads.path / f"{sample_id}_S1_L001_R1_001.fastq.gz"
             with source_path.open("rb") as source_fh:
                 with gzip.GzipFile(
                     filename="",
@@ -112,9 +104,7 @@ class RunHumannTests(TestPluginBase):
         self, database_kind: str, build: str
     ) -> HumannDatabaseDirFmt:
         database = HumannDatabaseDirFmt()
-        payload_dir = (
-            "chocophlan" if database_kind == "chocophlan" else "uniref"
-        )
+        payload_dir = "chocophlan" if database_kind == "chocophlan" else "uniref"
         (database.path / payload_dir).mkdir()
         extension = ".ffn.gz" if database_kind == "chocophlan" else ".dmnd"
         (database.path / payload_dir / f"db{extension}").write_bytes(b"data")
@@ -130,9 +120,7 @@ class RunHumannTests(TestPluginBase):
         database = MetaphlanDatabaseDirFmt()
         index = "mpa_vTest"
         (database.path / f"{index}.pkl").write_bytes(b"taxonomy")
-        for suffix in (
-            "1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"
-        ):
+        for suffix in ("1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"):
             (database.path / f"{index}.{suffix}").write_bytes(b"bowtie")
 
         with (database.path / "metadata.json").open("w") as fh:
@@ -163,9 +151,7 @@ class RunHumannTests(TestPluginBase):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
             sample_work_dir = tmpdir / "sample-b"
-            observed = _stage_sample_input(
-                sample_manifest, "sample-b", sample_work_dir
-            )
+            observed = _stage_sample_input(sample_manifest, "sample-b", sample_work_dir)
 
             self.assertEqual(observed, Path(sample_manifest["forward"]))
             self.assertFalse(sample_work_dir.exists())
@@ -176,21 +162,15 @@ class RunHumannTests(TestPluginBase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             sample_work_dir = Path(tmpdir) / "sample-a"
-            observed = _stage_sample_input(
-                sample_manifest, "sample-a", sample_work_dir
-            )
+            observed = _stage_sample_input(sample_manifest, "sample-a", sample_work_dir)
 
             expected = (
                 Path(self.get_data_path("sample-a-forward.fastq")).read_text()
-                + Path(
-                    self.get_data_path("sample-a-reverse.fastq")
-                ).read_text()
+                + Path(self.get_data_path("sample-a-reverse.fastq")).read_text()
             )
             self.assertEqual(observed, sample_work_dir / "sample-a.fastq.gz")
             self.assertTrue(sample_work_dir.is_dir())
-            self.assertEqual(
-                gzip.decompress(observed.read_bytes()).decode(), expected
-            )
+            self.assertEqual(gzip.decompress(observed.read_bytes()).decode(), expected)
 
     def test_stage_sample_input_fails_when_sample_has_no_reads(self):
         manifest = pd.Series({"forward": None, "reverse": None})
@@ -227,12 +207,8 @@ class RunHumannTests(TestPluginBase):
     def test_collate_path_abundance(self):
         first = HumannPathAbundanceDirectoryFormat()
         second = HumannPathAbundanceDirectoryFormat()
-        (first.path / "table.tsv").write_text(
-            "# Pathway\tsample-a\nPWY-A\t3.0\n"
-        )
-        (second.path / "table.tsv").write_text(
-            "# Pathway\tsample-b\nPWY-B\t4.0\n"
-        )
+        (first.path / "table.tsv").write_text("# Pathway\tsample-a\nPWY-A\t3.0\n")
+        (second.path / "table.tsv").write_text("# Pathway\tsample-b\nPWY-B\t4.0\n")
 
         observed = collate_path_abundance([first, second])
 
@@ -279,12 +255,8 @@ class RunHumannTests(TestPluginBase):
     def test_collate_reactions(self):
         first = HumannReactionDirectoryFormat()
         second = HumannReactionDirectoryFormat()
-        (first.path / "table.tsv").write_text(
-            "reaction\tsample-a\nR1\t1.0\n"
-        )
-        (second.path / "table.tsv").write_text(
-            "reaction\tsample-b\nR2\t2.0\n"
-        )
+        (first.path / "table.tsv").write_text("reaction\tsample-a\nR1\t1.0\n")
+        (second.path / "table.tsv").write_text("reaction\tsample-b\nR2\t2.0\n")
 
         observed = collate_reactions([first, second])
 
@@ -339,8 +311,7 @@ class RunHumannTests(TestPluginBase):
         with tempfile.TemporaryDirectory() as tmpdir:
             table_path = Path(tmpdir) / "table.tsv"
             table_path.write_text(
-                "# Gene Family\tsample-a_genefamilies\n"
-                "UniRef90_A\t1.0\n"
+                "# Gene Family\tsample-a_genefamilies\n" "UniRef90_A\t1.0\n"
             )
 
             with self.assertRaisesRegex(RuntimeError, "not normalized"):
@@ -355,17 +326,14 @@ class RunHumannTests(TestPluginBase):
 
             def _mock_run_command(cmd):
                 Path(cmd[cmd.index("--output") + 1]).write_text(
-                    "# Gene Family\tsample-a_genefamilies\n"
-                    "UniRef90_A\t1.0\n"
+                    "# Gene Family\tsample-a_genefamilies\n" "UniRef90_A\t1.0\n"
                 )
 
             with patch(
                 "q2_humann3.run.run_humann_command",
                 side_effect=_mock_run_command,
             ) as run_command:
-                _join_humann_tables(
-                    run_output_dir, "genefamilies", output_path
-                )
+                _join_humann_tables(run_output_dir, "genefamilies", output_path)
 
             run_command.assert_called_once_with(
                 [
@@ -380,8 +348,7 @@ class RunHumannTests(TestPluginBase):
             )
             self.assertEqual(
                 output_path.read_text(),
-                "# Gene Family\tsample-a_Abundance-RPKs\n"
-                "UniRef90_A\t1.0\n",
+                "# Gene Family\tsample-a_Abundance-RPKs\n" "UniRef90_A\t1.0\n",
             )
 
     def test_read_table_skips_metaphlan_version_header(self):
@@ -415,9 +382,7 @@ class RunHumannTests(TestPluginBase):
     def test_read_database_metadata_value(self):
         database = self._make_metaphlan_database()
 
-        self.assertEqual(
-            _read_database_metadata_value(database, "index"), "mpa_vTest"
-        )
+        self.assertEqual(_read_database_metadata_value(database, "index"), "mpa_vTest")
 
     def test_merge_metaphlan_profiles(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -477,12 +442,8 @@ class RunHumannTests(TestPluginBase):
             run_output_dir = tmpdir / "humann-output"
             run_output_dir.mkdir()
 
-            with self.assertRaisesRegex(
-                RuntimeError, "No MetaPhlAn bugs-list files"
-            ):
-                _merge_metaphlan_profiles(
-                    run_output_dir, tmpdir / "merged.tsv"
-                )
+            with self.assertRaisesRegex(RuntimeError, "No MetaPhlAn bugs-list files"):
+                _merge_metaphlan_profiles(run_output_dir, tmpdir / "merged.tsv")
 
     def test_merge_metaphlan_profiles_fails_when_command_writes_no_table(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -499,15 +460,11 @@ class RunHumannTests(TestPluginBase):
             output_path = tmpdir / "merged.tsv"
 
             with patch("q2_humann3.run.run_humann_command"):
-                with self.assertRaisesRegex(
-                    RuntimeError, "did not produce"
-                ):
+                with self.assertRaisesRegex(RuntimeError, "did not produce"):
                     _merge_metaphlan_profiles(run_output_dir, output_path)
 
     def test_regroup_gene_families_to_reactions_uses_uniref50_groups(self):
-        database = self._make_humann_database(
-            "translated-search", "uniref50_diamond"
-        )
+        database = self._make_humann_database("translated-search", "uniref50_diamond")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
@@ -516,9 +473,7 @@ class RunHumannTests(TestPluginBase):
             input_path.write_text("feature\tsample-a\nUniRef50_A\t1.0\n")
 
             with patch("q2_humann3.run.run_humann_command") as run_command:
-                _regroup_gene_families_to_reactions(
-                    input_path, database, output_path
-                )
+                _regroup_gene_families_to_reactions(input_path, database, output_path)
 
         run_command.assert_called_once_with(
             [
@@ -533,14 +488,10 @@ class RunHumannTests(TestPluginBase):
         )
 
     def test_regroup_gene_families_to_reactions_fails_on_unknown_build(self):
-        database = self._make_humann_database(
-            "translated-search", "custom_diamond"
-        )
+        database = self._make_humann_database("translated-search", "custom_diamond")
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with self.assertRaisesRegex(
-                RuntimeError, "Unsupported translated-search"
-            ):
+            with self.assertRaisesRegex(RuntimeError, "Unsupported translated-search"):
                 _regroup_gene_families_to_reactions(
                     Path(tmpdir) / "genefamilies.tsv",
                     database,
@@ -549,9 +500,7 @@ class RunHumannTests(TestPluginBase):
 
     def test_run_humann(self):
         reads = self._make_reads_dirfmt()
-        nucleotide_database = self._make_humann_database(
-            "chocophlan", "full"
-        )
+        nucleotide_database = self._make_humann_database("chocophlan", "full")
         translated_search_database = self._make_humann_database(
             "translated-search", "uniref90_diamond"
         )
@@ -583,9 +532,7 @@ class RunHumannTests(TestPluginBase):
                 )
             elif cmd[0] == "humann_regroup_table":
                 output_path = Path(cmd[cmd.index("--output") + 1])
-                output_path.write_text(
-                    "reaction\tsample-a\tsample-b\nR1\t1\t2\n"
-                )
+                output_path.write_text("reaction\tsample-a\tsample-b\nR1\t1\t2\n")
             else:
                 raise AssertionError(f"Unexpected command: {cmd!r}")
 
@@ -616,12 +563,8 @@ class RunHumannTests(TestPluginBase):
             )
 
         gene_families, path_abundance, metaphlan_profile, reactions = observed
-        self.assertIsInstance(
-            gene_families, HumannGeneFamilyDirectoryFormat
-        )
-        self.assertIsInstance(
-            path_abundance, HumannPathAbundanceDirectoryFormat
-        )
+        self.assertIsInstance(gene_families, HumannGeneFamilyDirectoryFormat)
+        self.assertIsInstance(path_abundance, HumannPathAbundanceDirectoryFormat)
         self.assertIsInstance(
             metaphlan_profile, MetaphlanMergedAbundanceDirectoryFormat
         )
@@ -634,9 +577,7 @@ class RunHumannTests(TestPluginBase):
         first_humann_cmd = run_command.call_args_list[0].args[0]
         self.assertEqual(first_humann_cmd[0], "humann")
         self.assertEqual(
-            first_humann_cmd[
-                first_humann_cmd.index("--output-basename") + 1
-            ],
+            first_humann_cmd[first_humann_cmd.index("--output-basename") + 1],
             "sample-a",
         )
         self.assertIn(
@@ -668,12 +609,8 @@ class RunHumannTests(TestPluginBase):
         self.assertEqual(merge_cmd[0], "merge_metaphlan_tables.py")
         self.assertEqual(merge_cmd[-2], "-o")
         self.assertEqual(Path(merge_cmd[-1]).name, "table.tsv")
-        self.assertTrue(
-            merge_cmd[1].endswith("sample-a_metaphlan_bugs_list.tsv")
-        )
-        self.assertTrue(
-            merge_cmd[2].endswith("sample-b_metaphlan_bugs_list.tsv")
-        )
+        self.assertTrue(merge_cmd[1].endswith("sample-a_metaphlan_bugs_list.tsv"))
+        self.assertTrue(merge_cmd[2].endswith("sample-b_metaphlan_bugs_list.tsv"))
         regroup_cmd = run_command.call_args_list[5].args[0]
         self.assertEqual(regroup_cmd[0], "humann_regroup_table")
         self.assertEqual(

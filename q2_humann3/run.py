@@ -80,9 +80,7 @@ def _join_humann_tables(
         "pathabundance": "Abundance",
     }
     if file_name in unit_labels:
-        _normalize_table_sample_headers(
-            output_path, file_name, unit_labels[file_name]
-        )
+        _normalize_table_sample_headers(output_path, file_name, unit_labels[file_name])
 
 
 def _normalize_table_sample_headers(
@@ -105,23 +103,17 @@ def _normalize_table_sample_headers(
 
     lines[0] = "\t".join(header)
     table_path.write_text("\n".join(lines) + "\n")
-    _assert_table_sample_headers_end_with(
-        table_path, unit_label.rsplit("-", 1)[-1]
-    )
+    _assert_table_sample_headers_end_with(table_path, unit_label.rsplit("-", 1)[-1])
 
 
-def _assert_table_sample_headers_end_with(
-    table_path: Path, unit_label: str
-) -> None:
+def _assert_table_sample_headers_end_with(table_path: Path, unit_label: str) -> None:
     """Confirm table sample headers satisfy downstream format validation."""
     lines = table_path.read_text().splitlines()
     if not lines:
         raise RuntimeError(f"HUMANN table {table_path} is empty.")
 
     header = lines[0].split("\t")
-    invalid_headers = [
-        field for field in header[1:] if not field.endswith(unit_label)
-    ]
+    invalid_headers = [field for field in header[1:] if not field.endswith(unit_label)]
     if invalid_headers:
         raise RuntimeError(
             "HUMANN table sample headers were not normalized correctly. "
@@ -130,17 +122,13 @@ def _assert_table_sample_headers_end_with(
         )
 
 
-def _merge_metaphlan_profiles(
-    run_output_dir: Path, output_path: Path
-) -> None:
+def _merge_metaphlan_profiles(run_output_dir: Path, output_path: Path) -> None:
     """Merge MetaPhlAn bugs-list profiles into one abundance table."""
     profile_paths = sorted(
         run_output_dir.glob("*_humann_temp/*_metaphlan_bugs_list.tsv")
     )
     if not profile_paths:
-        raise RuntimeError(
-            "No MetaPhlAn bugs-list files were available to merge."
-        )
+        raise RuntimeError("No MetaPhlAn bugs-list files were available to merge.")
 
     cmd = [
         "merge_metaphlan_tables.py",
@@ -170,9 +158,7 @@ def _regroup_gene_families_to_reactions(
     output_path: Path,
 ) -> None:
     """Regroup HUMANN gene families into reactions for the database build."""
-    build = _read_database_metadata_value(
-        translated_search_database, "build"
-    )
+    build = _read_database_metadata_value(translated_search_database, "build")
     if build.startswith("uniref50"):
         groups = "uniref50_rxn"
     elif build.startswith("uniref90"):
@@ -300,18 +286,18 @@ def _run_humann(
     pathways: str = "metacyc",
     output_max_decimals: int = 10,
     log_level: str = "DEBUG",
-) -> (HumannGeneFamilyDirectoryFormat,
-      HumannPathAbundanceDirectoryFormat,
-      MetaphlanMergedAbundanceDirectoryFormat,
-      HumannReactionDirectoryFormat):
+) -> (
+    HumannGeneFamilyDirectoryFormat,
+    HumannPathAbundanceDirectoryFormat,
+    MetaphlanMergedAbundanceDirectoryFormat,
+    HumannReactionDirectoryFormat,
+):
     """Run HUMANN per sample and return merged functional profile tables."""
     with tempfile.TemporaryDirectory(prefix="q2-humann3-run-") as tmpdir:
         tmpdir = Path(tmpdir)
         run_output_dir = tmpdir / "humann-output"
         run_output_dir.mkdir()
-        metaphlan_index = _read_database_metadata_value(
-            metaphlan_database, "index"
-        )
+        metaphlan_index = _read_database_metadata_value(metaphlan_database, "index")
         metaphlan_options = (
             f"--bowtie2db {metaphlan_database.path} -x {metaphlan_index}"
         )
@@ -390,24 +376,16 @@ def _run_humann(
         metaphlan_profile_table = metaphlan_profile.path / "table.tsv"
         reactions_table = reactions.path / "table.tsv"
 
-        _join_humann_tables(
-            run_output_dir, "genefamilies", gene_families_table
-        )
-        _join_humann_tables(
-            run_output_dir, "pathabundance", path_abundance_table
-        )
-        _merge_metaphlan_profiles(
-            run_output_dir, metaphlan_profile_table
-        )
+        _join_humann_tables(run_output_dir, "genefamilies", gene_families_table)
+        _join_humann_tables(run_output_dir, "pathabundance", path_abundance_table)
+        _merge_metaphlan_profiles(run_output_dir, metaphlan_profile_table)
         _regroup_gene_families_to_reactions(
             gene_families_table,
             translated_search_database,
             reactions_table,
         )
         _assert_table_sample_headers_end_with(gene_families_table, "RPKs")
-        _assert_table_sample_headers_end_with(
-            path_abundance_table, "Abundance"
-        )
+        _assert_table_sample_headers_end_with(path_abundance_table, "Abundance")
 
         return gene_families, path_abundance, metaphlan_profile, reactions
 
@@ -436,14 +414,10 @@ def run_humann(
     num_partitions=1,
 ):
     kwargs = {
-        k: v
-        for k, v in locals().items()
-        if k not in ["ctx", "reads", "num_partitions"]
+        k: v for k, v in locals().items() if k not in ["ctx", "reads", "num_partitions"]
     }
 
-    if reads.type <= SampleData[
-        SequencesWithQuality | JoinedSequencesWithQuality
-    ]:
+    if reads.type <= SampleData[SequencesWithQuality | JoinedSequencesWithQuality]:
         _partition_reads = ctx.get_action("types", "partition_samples_single")
     elif reads.type <= SampleData[PairedEndSequencesWithQuality]:
         _partition_reads = ctx.get_action("types", "partition_samples_paired")
@@ -451,21 +425,15 @@ def run_humann(
         raise NotImplementedError()
 
     _humann = ctx.get_action("humann", "_run_humann")
-    _collate_gene_families = ctx.get_action(
-        "humann", "collate_gene_families"
-    )
-    _collate_path_abundance = ctx.get_action(
-        "humann", "collate_path_abundance"
-    )
-    _collate_metaphlan_profiles = ctx.get_action(
-        "humann", "collate_metaphlan_profiles"
-    )
+    _collate_gene_families = ctx.get_action("humann", "collate_gene_families")
+    _collate_path_abundance = ctx.get_action("humann", "collate_path_abundance")
+    _collate_metaphlan_profiles = ctx.get_action("humann", "collate_metaphlan_profiles")
 
     (partitioned_reads,) = _partition_reads(reads, num_partitions)
 
     genes_all, path_all, metaphlan_all = [], [], []
     for _reads in partitioned_reads.values():
-        (gene_families, path_abundance, metaphlan_profile, reactions) = _humann(
+        gene_families, path_abundance, metaphlan_profile, reactions = _humann(
             reads=_reads, **kwargs
         )
         genes_all.append(gene_families)
@@ -478,9 +446,7 @@ def run_humann(
 
     reactions = HumannReactionDirectoryFormat()
     _regroup_gene_families_to_reactions(
-        gene_families.view(
-            HumannGeneFamilyDirectoryFormat
-        ).path / "table.tsv",
+        gene_families.view(HumannGeneFamilyDirectoryFormat).path / "table.tsv",
         translated_search_database.view(HumannDatabaseDirFmt),
         reactions.path / "table.tsv",
     )

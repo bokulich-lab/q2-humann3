@@ -8,7 +8,6 @@
 
 import subprocess
 
-
 EXTERNAL_CMD_WARNING = (
     "Running external command line application. This may print additional "
     "output below."
@@ -16,8 +15,7 @@ EXTERNAL_CMD_WARNING = (
 
 
 def run_command(
-    cmd: list[str], env=None, verbose: bool = True, pipe: bool = False,
-    **kwargs
+    cmd: list[str], env=None, verbose: bool = True, pipe: bool = False, **kwargs
 ):
     if verbose:
         print(EXTERNAL_CMD_WARNING)

@@ -54,15 +54,20 @@ class DownloadDatabaseTests(TestPluginBase):
         ) as run_command:
             observed = download_chocophlan_database()
 
-        run_command.assert_called_once_with([
-            "humann_databases", "--download", "chocophlan", "full",
-            str(observed.path), "--update-config", "no"
-        ])
+        run_command.assert_called_once_with(
+            [
+                "humann_databases",
+                "--download",
+                "chocophlan",
+                "full",
+                str(observed.path),
+                "--update-config",
+                "no",
+            ]
+        )
 
         self.assertIsInstance(observed, HumannDatabaseDirFmt)
-        self.assertTrue(
-            (observed.path / "chocophlan" / "full.ffn.gz").exists()
-        )
+        self.assertTrue((observed.path / "chocophlan" / "full.ffn.gz").exists())
         with open(observed.path / "metadata.json") as fh:
             metadata = json.load(fh)
         self.assertEqual(
@@ -82,15 +87,20 @@ class DownloadDatabaseTests(TestPluginBase):
         ) as run_command:
             observed = download_translated_search_database(build=build)
 
-        run_command.assert_called_once_with([
-            "humann_databases", "--download", "uniref", build,
-            str(observed.path), "--update-config", "no"
-        ])
+        run_command.assert_called_once_with(
+            [
+                "humann_databases",
+                "--download",
+                "uniref",
+                build,
+                str(observed.path),
+                "--update-config",
+                "no",
+            ]
+        )
 
         self.assertIsInstance(observed, HumannDatabaseDirFmt)
-        self.assertTrue(
-            (observed.path / "uniref" / f"{build}.dmnd").exists()
-        )
+        self.assertTrue((observed.path / "uniref" / f"{build}.dmnd").exists())
         with open(observed.path / "metadata.json") as fh:
             metadata = json.load(fh)
         self.assertEqual(
@@ -105,9 +115,7 @@ class DownloadDatabaseTests(TestPluginBase):
                 "Command failed with exit code 23: download failed"
             ),
         ):
-            with self.assertRaisesRegex(
-                RuntimeError, "download failed"
-            ):
+            with self.assertRaisesRegex(RuntimeError, "download failed"):
                 download_translated_search_database()
 
     def test_download_database_empty_result(self):
@@ -131,10 +139,18 @@ class DownloadDatabaseTests(TestPluginBase):
         ) as run_command:
             observed = download_metaphlan_database(cpus=4)
 
-        run_command.assert_called_once_with([
-            "metaphlan", "--install", "--bowtie2db", str(observed.path),
-            "-x", "latest", "--nproc", "4"
-        ])
+        run_command.assert_called_once_with(
+            [
+                "metaphlan",
+                "--install",
+                "--bowtie2db",
+                str(observed.path),
+                "-x",
+                "latest",
+                "--nproc",
+                "4",
+            ]
+        )
 
         self.assertIsInstance(observed, MetaphlanDatabaseDirFmt)
         self.assertTrue((observed.path / f"{index}.pkl").exists())
@@ -167,17 +183,11 @@ class DownloadDatabaseTests(TestPluginBase):
             (install_dir / "junk_dir").mkdir()
             (install_dir / "root_junk.txt").touch()
 
-        with patch(
-            "q2_humann3.db.run_humann_command", side_effect=_side_effect
-        ):
+        with patch("q2_humann3.db.run_humann_command", side_effect=_side_effect):
             observed = download_chocophlan_database()
 
-        self.assertTrue(
-            (observed.path / "chocophlan" / "full.ffn.gz").exists()
-        )
-        self.assertFalse(
-            (observed.path / "chocophlan" / "junk.txt").exists()
-        )
+        self.assertTrue((observed.path / "chocophlan" / "full.ffn.gz").exists())
+        self.assertFalse((observed.path / "chocophlan" / "junk.txt").exists())
         self.assertFalse((observed.path / "junk_dir").exists())
         self.assertFalse((observed.path / "root_junk.txt").exists())
 
@@ -190,9 +200,7 @@ class DownloadDatabaseTests(TestPluginBase):
             (install_dir / "other_index.pkl").touch()
             (install_dir / "metaphlan_log.txt").touch()
 
-        with patch(
-            "q2_humann3.db.run_humann_command", side_effect=_side_effect
-        ):
+        with patch("q2_humann3.db.run_humann_command", side_effect=_side_effect):
             observed = download_metaphlan_database()
 
         self.assertTrue((observed.path / f"{index}.pkl").exists())
@@ -213,24 +221,19 @@ class DownloadDatabaseTests(TestPluginBase):
         (db.path / "uniref").mkdir()
         (db.path / "uniref" / "data.dmnd").write_bytes(b"data")
         with (db.path / "metadata.json").open("w") as fh:
-            json.dump(
-                {"database_kind": "translated-search", "build": "uniref90"}, fh
-            )
+            json.dump({"database_kind": "translated-search", "build": "uniref90"}, fh)
         db.validate()
 
     def test_metaphlan_database_validation(self):
         db = MetaphlanDatabaseDirFmt()
         index = "mpa_vTest"
         (db.path / f"{index}.pkl").write_bytes(b"taxonomy")
-        for suffix in (
-            "1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"
-        ):
+        for suffix in ("1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"):
             (db.path / f"{index}.{suffix}").write_bytes(b"bowtie")
 
         with (db.path / "metadata.json").open("w") as fh:
             json.dump({"database_kind": "metaphlan", "index": index}, fh)
         db.validate()
-
 
     def test_infer_metaphlan_index(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -263,9 +266,7 @@ class DownloadDatabaseTests(TestPluginBase):
             install_dir = Path(tmpdir)
             (install_dir / "mpa_vTest.1.bt2").write_bytes(b"bowtie")
 
-            with self.assertRaisesRegex(
-                RuntimeError, "expected database pickle"
-            ):
+            with self.assertRaisesRegex(RuntimeError, "expected database pickle"):
                 _validate_metaphlan_database(install_dir, "mpa_vTest")
 
     def test_validate_metaphlan_database_missing_bowtie_index(self):
@@ -284,7 +285,5 @@ class DownloadDatabaseTests(TestPluginBase):
             (install_dir / "mpa_vTest.pkl").write_bytes(b"taxonomy")
             (install_dir / "mpa_vTest.1.bt2").write_bytes(b"bowtie")
 
-            with self.assertRaisesRegex(
-                RuntimeError, "Missing files: 2.bt2"
-            ):
+            with self.assertRaisesRegex(RuntimeError, "Missing files: 2.bt2"):
                 _validate_metaphlan_database(install_dir, "mpa_vTest")

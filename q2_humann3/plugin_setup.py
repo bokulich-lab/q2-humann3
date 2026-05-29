@@ -6,9 +6,7 @@
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
 
-from qiime2.plugin import (
-    Bool, Citations, Choices, Float, Int, List, Plugin, Range, Str
-)
+from qiime2.plugin import Bool, Citations, Choices, Float, Int, List, Plugin, Range, Str
 from q2_types.sample_data import SampleData
 from q2_types.per_sample_sequences import (
     JoinedSequencesWithQuality,
@@ -64,7 +62,7 @@ plugin = Plugin(
         "profiling of microbial communities."
     ),
     short_description="QIIME 2 wrapper for HUMANN 3.",
-    citations=[citations['Caporaso-Bolyen-2024']]
+    citations=[citations["Caporaso-Bolyen-2024"]],
 )
 
 plugin.register_semantic_types(
@@ -87,23 +85,17 @@ plugin.register_formats(
 plugin.register_artifact_class(
     HumannDatabase[ChocoPhlAn],
     directory_format=HumannDatabaseDirFmt,
-    description=(
-        "A HUMANN ChocoPhlAn nucleotide database."
-    ),
+    description=("A HUMANN ChocoPhlAn nucleotide database."),
 )
 plugin.register_artifact_class(
     HumannDatabase[TranslatedSearch],
     directory_format=HumannDatabaseDirFmt,
-    description=(
-        "A HUMANN translated-search database."
-    ),
+    description=("A HUMANN translated-search database."),
 )
 plugin.register_artifact_class(
     MetaphlanDatabase,
     directory_format=MetaphlanDatabaseDirFmt,
-    description=(
-        "A MetaPhlAn database."
-    ),
+    description=("A MetaPhlAn database."),
 )
 plugin.register_semantic_type_to_format(
     HumannReactionTable,
@@ -118,9 +110,7 @@ plugin.methods.register_function(
     input_descriptions={},
     parameter_descriptions={},
     output_descriptions={
-        "database": (
-            "The downloaded HUMANN 3 ChocoPhlAn nucleotide database."
-        )
+        "database": ("The downloaded HUMANN 3 ChocoPhlAn nucleotide database.")
     },
     name="Download ChocoPhlAn database",
     description=(
@@ -149,13 +139,9 @@ plugin.methods.register_function(
             "step via --nproc."
         ),
     },
-    output_descriptions={
-        "database": "The downloaded MetaPhlAn database."
-    },
+    output_descriptions={"database": "The downloaded MetaPhlAn database."},
     name="Download MetaPhlAn 3 database",
-    description=(
-        "Download a MetaPhlAn 3 database."
-    ),
+    description=("Download a MetaPhlAn 3 database."),
     citations=[citations["Beghini-etal-2021"]],
 )
 
@@ -168,14 +154,10 @@ plugin.methods.register_function(
     outputs=[("database", HumannDatabase[TranslatedSearch])],
     input_descriptions={},
     parameter_descriptions={
-        "build": (
-            "The HUMANN 3translated-search database build to download."
-        )
+        "build": ("The HUMANN 3translated-search database build to download.")
     },
     output_descriptions={
-        "database": (
-            "The downloaded HUMANN 3 translated-search database."
-        )
+        "database": ("The downloaded HUMANN 3 translated-search database.")
     },
     name="Download translated-search database",
     description=(
@@ -188,9 +170,7 @@ plugin.methods.register_function(
 plugin.methods.register_function(
     function=_run_humann,
     inputs={
-        "reads": SampleData[
-            SequencesWithQuality | PairedEndSequencesWithQuality
-        ],
+        "reads": SampleData[SequencesWithQuality | PairedEndSequencesWithQuality],
         "nucleotide_database": HumannDatabase[ChocoPhlAn],
         "translated_search_database": HumannDatabase[TranslatedSearch],
         "metaphlan_database": MetaphlanDatabase,
@@ -210,9 +190,7 @@ plugin.methods.register_function(
         "minpath": Bool,
         "pathways": Str % Choices(["metacyc", "unipathway"]),
         "output_max_decimals": Int % Range(0, None),
-        "log_level": Str % Choices(
-            ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        ),
+        "log_level": Str % Choices(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
     },
     outputs=[
         ("gene_families", HumannGeneFamilyTable),
@@ -222,12 +200,10 @@ plugin.methods.register_function(
     ],
     input_descriptions={
         "reads": (
-            "Single-end or paired-end demultiplexed reads to profile with "
-            "HUMANN 3."
+            "Single-end or paired-end demultiplexed reads to profile with " "HUMANN 3."
         ),
         "nucleotide_database": (
-            "The staged ChocoPhlAn database artifact to use for nucleotide "
-            "search."
+            "The staged ChocoPhlAn database artifact to use for nucleotide " "search."
         ),
         "translated_search_database": (
             "The staged translated-search database artifact to use for "
@@ -241,8 +217,7 @@ plugin.methods.register_function(
     parameter_descriptions={
         "threads": "Number of worker threads to pass to HUMANN.",
         "memory_use": (
-            "Amount of memory HUMANN 3 should use for intermediate "
-            "processing."
+            "Amount of memory HUMANN 3 should use for intermediate " "processing."
         ),
         "prescreen_threshold": (
             "Minimum percentage of reads that must match a species during "
@@ -268,9 +243,7 @@ plugin.methods.register_function(
         "translated_subject_coverage_threshold": (
             "Minimum subject coverage threshold for translated alignments."
         ),
-        "evalue": (
-            "Maximum e-value threshold for the translated search."
-        ),
+        "evalue": ("Maximum e-value threshold for the translated search."),
         "gap_fill": "Enable HUMANN 3 pathway gap filling.",
         "minpath": "Enable HUMANN 3 MinPath pathway computation.",
         "pathways": "Pathway database to use for pathway computations.",
@@ -283,9 +256,7 @@ plugin.methods.register_function(
         "gene_families": "Merged HUMANN 3 gene family abundance table.",
         "path_abundance": "Merged HUMANN 3 pathway abundance table.",
         "metaphlan_profile": "Merged MetaPhlAn 3 taxonomic profile table.",
-        "reactions": (
-            "Reaction table derived from merged HUMANN 3 gene families."
-        ),
+        "reactions": ("Reaction table derived from merged HUMANN 3 gene families."),
     },
     name="Run HUMANN3 ",
     description=(
@@ -303,17 +274,11 @@ plugin.methods.register_function(
     inputs={"tables": List[HumannGeneFamilyTable]},
     parameters={},
     outputs={"collated_table": HumannGeneFamilyTable},
-    input_descriptions={
-        "tables": "HUMANN 3 gene-family tables to collate."
-    },
+    input_descriptions={"tables": "HUMANN 3 gene-family tables to collate."},
     parameter_descriptions={},
-    output_descriptions={
-        "collated_table": "The collated HUMANN 3 gene-family table."
-    },
+    output_descriptions={"collated_table": "The collated HUMANN 3 gene-family table."},
     name="Collate HUMANN 3 gene-family tables",
-    description=(
-        "Collate multiple HUMANN 3 gene-family tables into one table."
-    ),
+    description=("Collate multiple HUMANN 3 gene-family tables into one table."),
     citations=[citations["Beghini-etal-2021"]],
 )
 
@@ -322,17 +287,13 @@ plugin.methods.register_function(
     inputs={"tables": List[HumannPathAbundanceTable]},
     parameters={},
     outputs={"collated_table": HumannPathAbundanceTable},
-    input_descriptions={
-        "tables": "HUMANN 3 pathway-abundance tables to collate."
-    },
+    input_descriptions={"tables": "HUMANN 3 pathway-abundance tables to collate."},
     parameter_descriptions={},
     output_descriptions={
         "collated_table": "The collated HUMANN 3 pathway-abundance table."
     },
     name="Collate HUMANN 3 pathway-abundance tables",
-    description=(
-        "Collate multiple HUMANN 3 pathway-abundance tables into one table."
-    ),
+    description=("Collate multiple HUMANN 3 pathway-abundance tables into one table."),
     citations=[citations["Beghini-etal-2021"]],
 )
 
@@ -341,17 +302,11 @@ plugin.methods.register_function(
     inputs={"tables": List[MetaphlanMergedAbundanceTable]},
     parameters={},
     outputs={"collated_table": MetaphlanMergedAbundanceTable},
-    input_descriptions={
-        "tables": "Merged MetaPhlAn 3 profile tables to collate."
-    },
+    input_descriptions={"tables": "Merged MetaPhlAn 3 profile tables to collate."},
     parameter_descriptions={},
-    output_descriptions={
-        "collated_table": "The collated MetaPhlAn 3 profile table."
-    },
+    output_descriptions={"collated_table": "The collated MetaPhlAn 3 profile table."},
     name="Collate MetaPhlAn 3 profile tables",
-    description=(
-        "Collate multiple merged MetaPhlAn 3 profile tables into one table."
-    ),
+    description=("Collate multiple merged MetaPhlAn 3 profile tables into one table."),
     citations=[citations["Beghini-etal-2021"]],
 )
 
@@ -360,13 +315,9 @@ plugin.methods.register_function(
     inputs={"tables": List[HumannReactionTable]},
     parameters={},
     outputs={"collated_table": HumannReactionTable},
-    input_descriptions={
-        "tables": "HUMANN 3 reaction tables to collate."
-    },
+    input_descriptions={"tables": "HUMANN 3 reaction tables to collate."},
     parameter_descriptions={},
-    output_descriptions={
-        "collated_table": "The collated HUMANN 3 reaction table."
-    },
+    output_descriptions={"collated_table": "The collated HUMANN 3 reaction table."},
     name="Collate HUMANN 3 reaction tables",
     description="Collate multiple HUMANN 3 reaction tables into one table.",
     citations=[citations["Beghini-etal-2021"]],
@@ -399,9 +350,7 @@ plugin.pipelines.register_function(
         "minpath": Bool,
         "pathways": Str % Choices(["metacyc", "unipathway"]),
         "output_max_decimals": Int % Range(0, None),
-        "log_level": Str % Choices(
-            ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        ),
+        "log_level": Str % Choices(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
         "num_partitions": Int % Range(1, None),
     },
     outputs=[
@@ -416,8 +365,7 @@ plugin.pipelines.register_function(
             "profile with HUMANN 3."
         ),
         "nucleotide_database": (
-            "The staged ChocoPhlAn database artifact to use for nucleotide "
-            "search."
+            "The staged ChocoPhlAn database artifact to use for nucleotide " "search."
         ),
         "translated_search_database": (
             "The staged translated-search database artifact to use for "
@@ -431,8 +379,7 @@ plugin.pipelines.register_function(
     parameter_descriptions={
         "threads": "Number of worker threads to pass to HUMANN 3.",
         "memory_use": (
-            "Amount of memory HUMANN 3 should use for intermediate "
-            "processing."
+            "Amount of memory HUMANN 3 should use for intermediate " "processing."
         ),
         "prescreen_threshold": (
             "Minimum percentage of reads that must match a species during "
@@ -474,9 +421,7 @@ plugin.pipelines.register_function(
         "gene_families": "Merged HUMANN 3 gene family abundance table.",
         "path_abundance": "Merged HUMANN 3 pathway abundance table.",
         "metaphlan_profile": "Merged MetaPhlAn 3 taxonomic profile table.",
-        "reactions": (
-            "Reaction table derived from merged HUMANN 3 gene families."
-        ),
+        "reactions": ("Reaction table derived from merged HUMANN 3 gene families."),
     },
     name="Run HUMANN 3",
     description=(

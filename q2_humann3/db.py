@@ -17,7 +17,6 @@ from q2_humann3._types_and_formats import (
 )
 from q2_humann3.utils import run_humann_command
 
-
 TRANSLATED_SEARCH_DATABASE_BUILDS = (
     "uniref90_diamond",
     "uniref90_ec_filtered_diamond",
@@ -31,14 +30,11 @@ def _infer_metaphlan_index(install_dir: Path) -> str:
     for path in sorted(install_dir.glob("*.pkl")):
         return path.stem
     raise RuntimeError(
-        "Unable to infer the MetaPhlAn database index from the downloaded "
-        "files."
+        "Unable to infer the MetaPhlAn database index from the downloaded " "files."
     )
 
 
-def _validate_metaphlan_database(
-    install_dir: Path, index: str
-) -> None:
+def _validate_metaphlan_database(install_dir: Path, index: str) -> None:
     """Validate that a MetaPhlAn install contains pickle and Bowtie2 files."""
     pkl_path = install_dir / f"{index}.pkl"
     if not pkl_path.exists():
@@ -68,7 +64,8 @@ def _validate_metaphlan_database(
         f"rev.2.{bt2_ext}",
     )
     missing = [
-        suffix for suffix in required_suffixes
+        suffix
+        for suffix in required_suffixes
         if not (install_dir / f"{index}.{suffix}").exists()
     ]
     if missing:
@@ -107,9 +104,7 @@ def _download_humann_database(
     try:
         run_humann_command(cmd)
     except RuntimeError as exc:
-        raise RuntimeError(
-            f"humann_databases failed: {exc}"
-        ) from exc
+        raise RuntimeError(f"humann_databases failed: {exc}") from exc
 
     if not any(artifact.path.iterdir()):
         raise RuntimeError(
@@ -134,7 +129,6 @@ def _download_humann_database(
                 shutil.rmtree(path)
             else:
                 path.unlink()
-
 
     _write_database_metadata(
         artifact,

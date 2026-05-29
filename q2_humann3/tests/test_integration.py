@@ -49,9 +49,7 @@ class RunHumannIntegrationTests(TestPluginBase):
         reads = CasavaOneEightSingleLanePerSampleDirFmt()
         for sample_id, fixture_name in sample_fixtures.items():
             source_path = Path(self.get_data_path(fixture_name))
-            destination_path = (
-                reads.path / f"{sample_id}_S1_L001_R1_001.fastq.gz"
-            )
+            destination_path = reads.path / f"{sample_id}_S1_L001_R1_001.fastq.gz"
             with source_path.open("rb") as source_fh:
                 with gzip.GzipFile(
                     filename="",
@@ -61,9 +59,7 @@ class RunHumannIntegrationTests(TestPluginBase):
                 ) as destination_fh:
                     destination_fh.write(source_fh.read())
 
-        return Artifact.import_data(
-            "SampleData[SequencesWithQuality]", reads
-        )
+        return Artifact.import_data("SampleData[SequencesWithQuality]", reads)
 
     def _make_humann_demo_database(
         self,
@@ -77,9 +73,7 @@ class RunHumannIntegrationTests(TestPluginBase):
         except ImportError:
             self.skipTest("HUMANN package is not importable.")
 
-        source_dir = (
-            Path(humann.__file__).resolve().parent / "data" / package_dir
-        )
+        source_dir = Path(humann.__file__).resolve().parent / "data" / package_dir
         if not source_dir.exists():
             self.skipTest(f"HUMANN demo database is missing: {source_dir}")
 
@@ -89,9 +83,7 @@ class RunHumannIntegrationTests(TestPluginBase):
         # Ensure at least one file with the required extension exists
         extension = ".ffn.gz" if database_kind == "chocophlan" else ".dmnd"
         if not list((database.path / payload_dir).glob(f"*{extension}")):
-            (database.path / payload_dir / f"demo{extension}").write_bytes(
-                b"data"
-            )
+            (database.path / payload_dir / f"demo{extension}").write_bytes(b"data")
 
         with (database.path / "metadata.json").open("w") as fh:
             json.dump(
@@ -119,9 +111,7 @@ class RunHumannIntegrationTests(TestPluginBase):
         database = MetaphlanDatabaseDirFmt()
         index = "mpa_vTest"
         (database.path / f"{index}.pkl").write_bytes(b"taxonomy")
-        for suffix in (
-            "1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"
-        ):
+        for suffix in ("1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"):
             (database.path / f"{index}.{suffix}").write_bytes(b"bowtie")
 
         with (database.path / "metadata.json").open("w") as fh:
@@ -130,7 +120,6 @@ class RunHumannIntegrationTests(TestPluginBase):
                 fh,
             )
         return database
-
 
     def _make_toy_metaphlan_database_artifact(self) -> Artifact:
         return Artifact.import_data(
@@ -160,20 +149,17 @@ class RunHumannIntegrationTests(TestPluginBase):
             column for column in expected_df.columns if column not in key_columns
         )
         columns = key_columns + sample_columns
-        observed_df = observed_df[columns].sort_values(
-            key_columns
-        ).reset_index(drop=True)
-        expected_df = expected_df[columns].sort_values(
-            key_columns
-        ).reset_index(drop=True)
-        pd.testing.assert_frame_equal(
-            observed_df, expected_df, check_dtype=False
+        observed_df = (
+            observed_df[columns].sort_values(key_columns).reset_index(drop=True)
         )
+        expected_df = (
+            expected_df[columns].sort_values(key_columns).reset_index(drop=True)
+        )
+        pd.testing.assert_frame_equal(observed_df, expected_df, check_dtype=False)
 
     def _write_fake_metaphlan_executable(self, bin_dir: Path) -> None:
         executable = bin_dir / "metaphlan"
-        executable.write_text(
-            """#!/usr/bin/env python
+        executable.write_text("""#!/usr/bin/env python
 from pathlib import Path
 import sys
 
@@ -191,8 +177,7 @@ g__Bacteroides|s__Bacteroides_dorei\t357276\t100.0
 
 Path(sys.argv[sys.argv.index("-o") + 1]).write_text(profile)
 Path(sys.argv[sys.argv.index("--bowtie2out") + 1]).write_text("")
-"""
-        )
+""")
         executable.chmod(0o755)
 
     def test_partitioned_pipeline_matches_unpartitioned_run(self):
