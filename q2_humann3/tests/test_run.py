@@ -18,7 +18,7 @@ from q2_types.per_sample_sequences import (
 )
 from qiime2.plugin.testing import TestPluginBase
 
-from q2_humann.run import (
+from q2_humann3.run import (
     _assert_table_sample_headers_end_with,
     _join_humann_tables,
     _merge_metaphlan_profiles,
@@ -33,7 +33,7 @@ from q2_humann.run import (
     collate_path_abundance,
     collate_reactions,
 )
-from q2_humann._types_and_formats import (
+from q2_humann3._types_and_formats import (
     HumannDatabaseDirFmt,
     HumannReactionDirectoryFormat,
     MetaphlanDatabaseDirFmt,
@@ -46,7 +46,7 @@ from q2_sapienns.plugin_setup import (
 
 
 class RunHumannTests(TestPluginBase):
-    package = "q2_humann.tests"
+    package = "q2_humann3.tests"
 
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -360,7 +360,7 @@ class RunHumannTests(TestPluginBase):
                 )
 
             with patch(
-                "q2_humann.run.run_humann_command",
+                "q2_humann3.run.run_humann_command",
                 side_effect=_mock_run_command,
             ) as run_command:
                 _join_humann_tables(
@@ -448,7 +448,7 @@ class RunHumannTests(TestPluginBase):
                 )
 
             with patch(
-                "q2_humann.run.run_humann_command",
+                "q2_humann3.run.run_humann_command",
                 side_effect=_mock_run_command,
             ) as run_command:
                 _merge_metaphlan_profiles(run_output_dir, output_path)
@@ -498,7 +498,7 @@ class RunHumannTests(TestPluginBase):
             )
             output_path = tmpdir / "merged.tsv"
 
-            with patch("q2_humann.run.run_humann_command"):
+            with patch("q2_humann3.run.run_humann_command"):
                 with self.assertRaisesRegex(
                     RuntimeError, "did not produce"
                 ):
@@ -515,7 +515,7 @@ class RunHumannTests(TestPluginBase):
             output_path = tmpdir / "reactions.tsv"
             input_path.write_text("feature\tsample-a\nUniRef50_A\t1.0\n")
 
-            with patch("q2_humann.run.run_humann_command") as run_command:
+            with patch("q2_humann3.run.run_humann_command") as run_command:
                 _regroup_gene_families_to_reactions(
                     input_path, database, output_path
                 )
@@ -590,7 +590,7 @@ class RunHumannTests(TestPluginBase):
                 raise AssertionError(f"Unexpected command: {cmd!r}")
 
         with patch(
-            "q2_humann.run.run_humann_command",
+            "q2_humann3.run.run_humann_command",
             side_effect=_mock_run_command,
         ) as run_command:
             observed = _run_humann(

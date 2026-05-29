@@ -14,21 +14,21 @@ from unittest.mock import patch
 
 from qiime2.plugin.testing import TestPluginBase
 
-from q2_humann.db import (
+from q2_humann3.db import (
     download_chocophlan_database,
     download_metaphlan_database,
     download_translated_search_database,
     _infer_metaphlan_index,
     _validate_metaphlan_database,
 )
-from q2_humann._types_and_formats import (
+from q2_humann3._types_and_formats import (
     HumannDatabaseDirFmt,
     MetaphlanDatabaseDirFmt,
 )
 
 
 class DownloadDatabaseTests(TestPluginBase):
-    package = "q2_humann.tests"
+    package = "q2_humann3.tests"
 
     def _write_complete_metaphlan_database(
         self, install_dir: Path, index: str, suffix: str = "bt2"
@@ -50,7 +50,7 @@ class DownloadDatabaseTests(TestPluginBase):
             (Path(cmd[4]) / "chocophlan" / "full.ffn.gz").touch()
 
         with patch(
-            "q2_humann.db.run_humann_command", side_effect=_side_effect
+            "q2_humann3.db.run_humann_command", side_effect=_side_effect
         ) as run_command:
             observed = download_chocophlan_database()
 
@@ -78,7 +78,7 @@ class DownloadDatabaseTests(TestPluginBase):
             (Path(cmd[4]) / "uniref" / f"{build}.dmnd").touch()
 
         with patch(
-            "q2_humann.db.run_humann_command", side_effect=_side_effect
+            "q2_humann3.db.run_humann_command", side_effect=_side_effect
         ) as run_command:
             observed = download_translated_search_database(build=build)
 
@@ -100,7 +100,7 @@ class DownloadDatabaseTests(TestPluginBase):
 
     def test_download_database_failure(self):
         with patch(
-            "q2_humann.db.run_humann_command",
+            "q2_humann3.db.run_humann_command",
             side_effect=RuntimeError(
                 "Command failed with exit code 23: download failed"
             ),
@@ -112,7 +112,7 @@ class DownloadDatabaseTests(TestPluginBase):
 
     def test_download_database_empty_result(self):
         with patch(
-            "q2_humann.db.run_humann_command",
+            "q2_humann3.db.run_humann_command",
             return_value=subprocess.CompletedProcess([], 0, "", ""),
         ):
             with self.assertRaisesRegex(
@@ -127,7 +127,7 @@ class DownloadDatabaseTests(TestPluginBase):
             self._write_complete_metaphlan_database(Path(cmd[3]), index)
 
         with patch(
-            "q2_humann.db.run_humann_command", side_effect=_side_effect
+            "q2_humann3.db.run_humann_command", side_effect=_side_effect
         ) as run_command:
             observed = download_metaphlan_database(cpus=4)
 
@@ -150,7 +150,7 @@ class DownloadDatabaseTests(TestPluginBase):
 
     def test_download_metaphlan_database_empty_result(self):
         with patch(
-            "q2_humann.db.run_humann_command",
+            "q2_humann3.db.run_humann_command",
             return_value=subprocess.CompletedProcess([], 0, "", ""),
         ):
             with self.assertRaisesRegex(
@@ -168,7 +168,7 @@ class DownloadDatabaseTests(TestPluginBase):
             (install_dir / "root_junk.txt").touch()
 
         with patch(
-            "q2_humann.db.run_humann_command", side_effect=_side_effect
+            "q2_humann3.db.run_humann_command", side_effect=_side_effect
         ):
             observed = download_chocophlan_database()
 
@@ -191,7 +191,7 @@ class DownloadDatabaseTests(TestPluginBase):
             (install_dir / "metaphlan_log.txt").touch()
 
         with patch(
-            "q2_humann.db.run_humann_command", side_effect=_side_effect
+            "q2_humann3.db.run_humann_command", side_effect=_side_effect
         ):
             observed = download_metaphlan_database()
 

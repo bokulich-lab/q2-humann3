@@ -21,13 +21,13 @@ from q2_types.per_sample_sequences import (
 )
 from q2_types.sample_data import SampleData
 
-from q2_humann._types_and_formats import (
+from q2_humann3._types_and_formats import (
     HumannDatabaseDirFmt,
     HumannReactionTable,
     HumannReactionDirectoryFormat,
     MetaphlanDatabaseDirFmt,
 )
-from q2_humann.utils import run_humann_command
+from q2_humann3.utils import run_humann_command
 from q2_sapienns.plugin_setup import (
     HumannGeneFamilyDirectoryFormat,
     HumannPathAbundanceDirectoryFormat,
@@ -305,7 +305,7 @@ def _run_humann(
       MetaphlanMergedAbundanceDirectoryFormat,
       HumannReactionDirectoryFormat):
     """Run HUMANN per sample and return merged functional profile tables."""
-    with tempfile.TemporaryDirectory(prefix="q2-humann-run-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="q2-humann3-run-") as tmpdir:
         tmpdir = Path(tmpdir)
         run_output_dir = tmpdir / "humann-output"
         run_output_dir.mkdir()

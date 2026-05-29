@@ -22,8 +22,8 @@ from q2_types.per_sample_sequences import (
     CasavaOneEightSingleLanePerSampleDirFmt,
 )
 
-from q2_humann.plugin_setup import plugin
-from q2_humann._types_and_formats import (
+from q2_humann3.plugin_setup import plugin
+from q2_humann3._types_and_formats import (
     HumannDatabaseDirFmt,
     HumannReactionDirectoryFormat,
     MetaphlanDatabaseDirFmt,
@@ -36,7 +36,7 @@ from q2_sapienns.plugin_setup import (
 
 
 class RunHumannIntegrationTests(TestPluginBase):
-    package = "q2_humann.tests"
+    package = "q2_humann3.tests"
 
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()

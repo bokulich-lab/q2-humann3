@@ -7,7 +7,7 @@ on:
     branches: ["main"]
 
 jobs:
-  build-q2-humann:
+  build-q2-humann3:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -31,15 +31,13 @@ jobs:
     - name: Set up Conda
       uses: qiime2-cutlery/setup-miniconda@v3
       with:
-        activate-environment: q2-humann-qiime2-tiny-dev
-        environment-file: environment-files/q2-humann-qiime2-tiny-dev.yml
+        activate-environment: q2-humann3-dev
+        environment-file: environment-files/q2-humann3-qiime2-tiny-dev.yml
         auto-activate-base: false
 
     - name: Install plugin
       shell: bash -l {0}
-      run: |
-        cd q2-humann
-        make install
+      run: make install
 
     - name: Call info on the deployment
       shell: bash -l {0}
@@ -49,17 +47,14 @@ jobs:
     - name: Call --help on plugin
       shell: bash -l {0}
       run: |
-        qiime humann --help
+        qiime humann3 --help
 
     - name: Test plugin
       shell: bash -l {0}
-      run: |
-        cd q2-humann
-        make test
+      run: make test
 
     - name: Lint plugin
       shell: bash -l {0}
       run: |
-        cd q2-humann
         flake8
         q2lint

@@ -11,11 +11,11 @@ import shutil
 from pathlib import Path
 from typing import Union
 
-from q2_humann._types_and_formats import (
+from q2_humann3._types_and_formats import (
     HumannDatabaseDirFmt,
     MetaphlanDatabaseDirFmt,
 )
-from q2_humann.utils import run_humann_command
+from q2_humann3.utils import run_humann_command
 
 
 TRANSLATED_SEARCH_DATABASE_BUILDS = (
