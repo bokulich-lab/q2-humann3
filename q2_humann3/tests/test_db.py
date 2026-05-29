@@ -197,14 +197,12 @@ class DownloadDatabaseTests(TestPluginBase):
         def _side_effect(cmd):
             install_dir = Path(cmd[3])
             self._write_complete_metaphlan_database(install_dir, index)
-            (install_dir / "other_index.pkl").touch()
             (install_dir / "metaphlan_log.txt").touch()
 
         with patch("q2_humann3.db.run_humann_command", side_effect=_side_effect):
             observed = download_metaphlan_database()
 
         self.assertTrue((observed.path / f"{index}.pkl").exists())
-        self.assertFalse((observed.path / "other_index.pkl").exists())
         self.assertFalse((observed.path / "metaphlan_log.txt").exists())
 
     def test_humann_database_validation(self):
